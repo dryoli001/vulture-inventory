@@ -425,16 +425,38 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script async defer src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script>
     // Supabase Configuration
     const SUPABASE_URL = 'https://khepitixnrezlnyablfd.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_ITVKCtxEo826CuvP3WPg6g_BgD99vSB';
-    let supabase;
+    let supabase = null;
     
-    // Wait for Supabase library to load
-    if (window.supabase && window.supabase.createClient) {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Initialize Supabase when library is ready
+    function initSupabase() {
+      if (window.supabase && window.supabase.createClient) {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log("✓ Supabase initialized successfully");
+        return true;
+      }
+      console.warn("⏳ Supabase library not yet loaded");
+      return false;
+    }
+    
+    // Try to init immediately
+    if (!initSupabase()) {
+      // If not ready, wait for library to load
+      const maxAttempts = 30;
+      let attempts = 0;
+      const initInterval = setInterval(() => {
+        attempts++;
+        if (initSupabase() || attempts >= maxAttempts) {
+          clearInterval(initInterval);
+          if (attempts >= maxAttempts) {
+            console.error("✗ Supabase failed to initialize after 30 seconds. Check your internet connection.");
+          }
+        }
+      }, 100);
     }
     const partForm = document.getElementById('partForm');
     const inventoryBody = document.getElementById('inventoryBody');
@@ -460,6 +482,11 @@
 
     async function loadParts() {
       try {
+        if (!supabase) {
+          console.error("Supabase not initialized. Using starter parts.");
+          return getStarterParts();
+        }
+        
         const { data, error } = await supabase
           .from('inventory_parts')
           .select('*')
@@ -507,6 +534,11 @@
     }
 
     async function addPart(formData) {
+      if (!supabase) {
+        alert("Supabase not initialized. Please refresh the page.");
+        return false;
+      }
+      
       const { data, error } = await supabase
         .from('inventory_parts')
         .insert([formData])
@@ -527,6 +559,11 @@
     }
 
     async function updatePart(partId, formData) {
+      if (!supabase) {
+        alert("Supabase not initialized.");
+        return false;
+      }
+      
       const { error } = await supabase
         .from('inventory_parts')
         .update(formData)
@@ -542,6 +579,11 @@
     }
 
     async function deletePart(partId) {
+      if (!supabase) {
+        alert("Supabase not initialized.");
+        return false;
+      }
+      
       const { error } = await supabase
         .from('inventory_parts')
         .delete()
@@ -557,6 +599,11 @@
     }
 
     async function updateQuantity(partId, quantity) {
+      if (!supabase) {
+        alert("Supabase not initialized.");
+        return false;
+      }
+      
       const { error } = await supabase
         .from('inventory_parts')
         .update({ quantity })
