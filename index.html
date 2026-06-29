@@ -1,0 +1,908 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VULTR Inventory Manager</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #111c2f;
+      --panel-2: #16253d;
+      --text: #e6eefc;
+      --muted: #93a6c6;
+      --accent: #38bdf8;
+      --accent-2: #818cf8;
+      --success: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --border: rgba(255,255,255,0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(135deg, var(--bg), #0f172a);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 24px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .title h1 { margin: 0 0 6px; font-size: 28px; text-align: center; }
+    .title p { margin: 0; color: var(--muted); }
+
+    .pill {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.28);
+    }
+
+    .card h3 { margin: 0 0 8px; color: var(--muted); font-size: 15px; font-weight: 600; }
+    .card .value { font-size: 32px; font-weight: 700; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.2);
+    }
+
+    .panel:first-child {
+      align-self: start;
+    }
+
+    .panel:last-child {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 300px);
+    }
+
+    form label {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    input, select, button {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0d1728;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    input:focus, select:focus { outline: 2px solid rgba(56,189,248,0.35); }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .actions { display: flex; gap: 0.5rem; margin-top: 12px; align-items: center; flex-wrap: nowrap; justify-content: flex-start; }
+    .options-wrapper { position: relative; display: inline-flex; margin-left: 0.5rem; }
+    .options-toggle {
+      width: 38px;
+      min-width: 38px;
+      height: 38px;
+      padding: 0;
+      border-radius: 999px;
+      font-size: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .options-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      display: none;
+      min-width: 130px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      padding: 6px 0;
+      z-index: 20;
+    }
+    .options-menu.open {
+      display: block;
+    }
+    .options-menu button {
+      width: 100%;
+      border: none;
+      background: transparent;
+      text-align: left;
+      padding: 10px 14px;
+      border-radius: 0;
+      margin: 0;
+      font-size: 14px;
+    }
+    .options-menu button:hover {
+      background: rgba(255,255,255,0.08);
+      transform: none;
+      filter: none;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+    button:hover { transform: translateY(-1px); filter: brightness(1.08); }
+    .primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: none; }
+    .secondary { background: rgba(255,255,255,0.08); }
+    .danger { background: rgba(239,68,68,0.18); color: #fecaca; }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .toolbar input { max-width: 260px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      overflow: visible;
+      border-radius: 12px;
+    }
+    th, td {
+      overflow: visible;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      vertical-align: middle;
+    }
+
+    th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    .status { padding: 6px 10px; border-radius: 999px; display: inline-block; font-size: 12px; font-weight: 700; }
+    .status-good { background: rgba(34,197,94,0.16); color: #bbf7d0; }
+    .status-low { background: rgba(245,158,11,0.16); color: #fde68a; }
+    .status-danger { background: rgba(239,68,68,0.16); color: #fecaca; }
+
+    .small { font-size: 12px; color: var(--muted); }
+    .empty { text-align: center; color: var(--muted); padding: 28px 10px; }
+
+    .table-scroll {
+      max-height: 800px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-right: 4px;
+      margin-bottom: 16px;
+      flex: 1;
+    }
+    .table-scroll.no-scroll {
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+    }
+    .table-scroll table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .summary-list { display: grid; gap: 10px; margin-top: 12px; }
+    .summary-item {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .summary-item strong { display: block; margin-bottom: 5px; }
+
+    .image-thumb {
+      width: 72px;
+      height: 64px;
+      object-fit: cover;
+      border-radius: 6px;
+      cursor: zoom-in;
+      display: block;
+    }
+
+    .image-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 999;
+    }
+
+    .image-modal.open { display: flex; }
+
+    .image-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+    }
+
+    .image-modal-content {
+      position: relative;
+      max-width: 90%;
+      max-height: 90%;
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(15,23,42,0.95);
+      box-shadow: 0 26px 80px rgba(0,0,0,0.55);
+    }
+
+    .image-modal-content img {
+      display: block;
+      max-width: 100%;
+      max-height: 80vh;
+      border-radius: 14px;
+    }
+
+    .modal-caption {
+      margin-top: 12px;
+      color: var(--text);
+      font-size: 15px;
+      text-align: center;
+      opacity: 0.88;
+      line-height: 1.5;
+    }
+
+    .modal-close {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      font-size: 24px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 620px) {
+      .row { grid-template-columns: 1fr; }
+      .app { padding: 14px; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .toolbar input { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="title">
+        <h1>VULTR Inventory Manager</h1>
+      </div>
+    </header>
+
+    <section class="stats">
+      <div class="card">
+        <h3>Total Parts</h3>
+        <div class="value" id="totalItems">0</div>
+      </div>
+      <div class="card">
+        <h3>Low Stock</h3>
+        <div class="value" id="lowStockCount">0</div>
+      </div>
+      <div class="card">
+        <h3>Reorder Needed</h3>
+        <div class="value" id="reorderCount">0</div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2 style="margin-top: 0;">Add or edit a part</h2>
+        <form id="partForm">
+          <input type="hidden" id="partId" />
+          <label>
+            Part name
+            <input type="text" id="name" placeholder="" required />
+          </label>
+          <label>
+            Barcode / SKU
+            <input type="text" id="barcode" placeholder="Scan or type barcode / SKU" />
+          </label>
+          <label>
+            Part image
+            <input type="file" id="image" accept="image/*" />
+          </label>
+          <img id="imagePreview" alt="Image preview" style="display:none; width:100%; max-height:160px; object-fit:cover; margin-top:0.5rem; border-radius:6px;" />
+          <div class="row">
+            <label>
+              Quantity on hand
+              <input type="number" id="quantity" min="0" value="0" required />
+            </label>
+            <label>
+              Minimum stock
+              <input type="number" id="minStock" min="1" value="1" required />
+            </label>
+          </div>
+          <div class="actions">
+            <button class="primary" type="submit" id="submitButton">Add part</button>
+            <button class="secondary" type="button" id="cancelEdit">Cancel</button>
+            <button class="secondary" type="button" id="openScanner">Scan barcode</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="toolbar" style="justify-content: space-between; align-items: center;">
+          <h2 style="margin: 0;">Inventory</h2>
+          <input type="search" id="searchInput" placeholder="Search parts" style="flex: 1; max-width: 360px; min-width: 200px;" />
+        </div>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Image</th>
+                <th>Part</th>
+                <th>Barcode</th>
+                <th>Stock</th>
+                <th>Min</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryBody"></tbody>
+          </table>
+        </div>
+
+        <div class="summary-list" id="reorderSummary"></div>
+
+        <div id="imageModal" class="image-modal" aria-hidden="true">
+          <div class="image-modal-backdrop" data-action="close-modal"></div>
+          <div class="image-modal-content" role="dialog" aria-modal="true">
+            <button type="button" class="modal-close" id="closeImageModal" aria-label="Close">×</button>
+            <img id="modalImage" alt="Enlarged part image" />
+            <div id="modalCaption" class="modal-caption"></div>
+          </div>
+        </div>
+
+        <div id="scannerModal" class="image-modal" aria-hidden="true">
+          <div class="image-modal-backdrop" data-action="close-scanner"></div>
+          <div class="image-modal-content" role="dialog" aria-modal="true">
+            <button type="button" class="modal-close" id="closeScanner" aria-label="Close">×</button>
+            <div class="small">Scan a barcode using a hardware (keyboard) scanner. The scanner should send the code followed by Enter.</div>
+            <input id="scannerInput" type="text" autocomplete="off" style="width:100%; margin-top:8px; padding:10px; font-size:16px;" placeholder="Awaiting scan..." />
+          </div>
+        </div>
+        
+      </section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Supabase Configuration
+    const SUPABASE_URL = 'https://khepitixnrezlnyablfd.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_ITVKCtxEo826CuvP3WPg6g_BgD99vSB';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const partForm = document.getElementById('partForm');
+    const inventoryBody = document.getElementById('inventoryBody');
+    const reorderSummary = document.getElementById('reorderSummary');
+    const searchInput = document.getElementById('searchInput');
+    const cancelEditButton = document.getElementById('cancelEdit');
+    const submitButton = document.getElementById('submitButton');
+    const imageInput = document.getElementById('image');
+    const imagePreview = document.getElementById('imagePreview');
+    const imageModal = document.getElementById('imageModal');
+    const modalImage = document.getElementById('modalImage');
+    const modalCaption = document.getElementById('modalCaption');
+    const closeImageModalButton = document.getElementById('closeImageModal');
+    const openScannerButton = document.getElementById('openScanner');
+    const scannerModal = document.getElementById('scannerModal');
+    const closeScannerButton = document.getElementById('closeScanner');
+    const scannerInput = document.getElementById('scannerInput');
+    const tableScroll = document.querySelector('.table-scroll');
+
+    let parts = [];
+    let editingId = null;
+    let selectedImageData = null;
+
+    async function loadParts() {
+      try {
+        const { data, error } = await supabase
+          .from('inventory_parts')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          console.warn('Could not load inventory from Supabase:', error);
+          return getStarterParts();
+        }
+        
+        if (data && data.length > 0) {
+          return data;
+        }
+        
+        // If table is empty, create starter data
+        return await createStarterParts();
+      } catch (error) {
+        console.warn('Error loading parts:', error);
+        return getStarterParts();
+      }
+    }
+
+    function getStarterParts() {
+      return [
+        { id: makeId(), name: 'Bearing 6204', barcode: '6204-BRG', quantity: 8, minStock: 10, image: null },
+        { id: makeId(), name: 'Hydraulic Seal Kit', barcode: 'HSK-001', quantity: 3, minStock: 6, image: null },
+        { id: makeId(), name: 'Motor Relay 24V', barcode: 'MR-24V', quantity: 14, minStock: 8, image: null }
+      ];
+    }
+
+    async function createStarterParts() {
+      const starterParts = getStarterParts();
+      const { error } = await supabase
+        .from('inventory_parts')
+        .insert(starterParts);
+      
+      if (error) {
+        console.warn('Could not create starter parts:', error);
+      }
+      
+      return starterParts;
+    }
+
+    async function saveParts() {
+      // Note: This function is called after modifications, but the individual operations
+      // (add, update, delete) should handle their own Supabase calls
+      // This is kept for compatibility but individual operations should use Supabase directly
+    }
+
+    async function addPart(formData) {
+      const part = { id: makeId(), ...formData, created_at: new Date() };
+      const { error } = await supabase
+        .from('inventory_parts')
+        .insert([part]);
+      
+      if (error) {
+        alert('Error adding part: ' + error.message);
+        return false;
+      }
+      
+      parts.unshift(part);
+      return true;
+    }
+
+    async function updatePart(partId, formData) {
+      const { error } = await supabase
+        .from('inventory_parts')
+        .update(formData)
+        .eq('id', partId);
+      
+      if (error) {
+        alert('Error updating part: ' + error.message);
+        return false;
+      }
+      
+      parts = parts.map(part => part.id === partId ? { ...part, ...formData } : part);
+      return true;
+    }
+
+    async function deletePart(partId) {
+      const { error } = await supabase
+        .from('inventory_parts')
+        .delete()
+        .eq('id', partId);
+      
+      if (error) {
+        alert('Error deleting part: ' + error.message);
+        return false;
+      }
+      
+      parts = parts.filter(item => item.id !== partId);
+      return true;
+    }
+
+    async function updateQuantity(partId, quantity) {
+      const { error } = await supabase
+        .from('inventory_parts')
+        .update({ quantity })
+        .eq('id', partId);
+      
+      if (error) {
+        alert('Error updating quantity: ' + error.message);
+        return false;
+      }
+      
+      parts = parts.map(part => part.id === partId ? { ...part, quantity } : part);
+      return true;
+    }
+
+    function makeId() {
+      if (window.crypto && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      return 'id-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function getStatus(part) {
+      if (part.quantity <= 0) return { label: 'Out of stock', className: 'status-danger' };
+      if (part.quantity <= part.minStock) return { label: 'Reorder', className: 'status-danger' };
+      if (part.quantity <= part.minStock + 3) return { label: 'Low stock', className: 'status-low' };
+      return { label: 'In stock', className: 'status-good' };
+    }
+
+    function updateImagePreview(src) {
+      if (src) {
+        imagePreview.src = src;
+        imagePreview.style.display = 'block';
+      } else {
+        imagePreview.src = '';
+        imagePreview.style.display = 'none';
+      }
+    }
+
+    function adjustQuantity(partId, delta) {
+      const part = parts.find(p => p.id === partId);
+      if (!part) return;
+      const newQuantity = Math.max(0, part.quantity + delta);
+      updateQuantity(partId, newQuantity).then(success => {
+        if (success) {
+          render();
+        }
+      });
+    }
+
+    function adjustQuantityMultiple(partId) {
+      const amount = prompt('Enter the quantity change for this item (use a negative number to subtract):', '0');
+      if (amount === null) return;
+      const delta = parseInt(amount, 10);
+      if (isNaN(delta) || delta === 0) {
+        return alert('Please enter a non-zero number.');
+      }
+      adjustQuantity(partId, delta);
+    }
+
+    function openImageModal(src, alt) {
+      if (!src) return;
+      modalImage.src = src;
+      modalImage.alt = alt || 'Enlarged item image';
+      modalCaption.textContent = alt || '';
+      imageModal.classList.add('open');
+      imageModal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeImageModal() {
+      imageModal.classList.remove('open');
+      imageModal.setAttribute('aria-hidden', 'true');
+      modalImage.src = '';
+      modalImage.alt = '';
+      modalCaption.textContent = '';
+    }
+
+    imageInput.addEventListener('change', function () {
+      const file = imageInput.files && imageInput.files[0];
+      if (!file) {
+        selectedImageData = null;
+        updateImagePreview(null);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        selectedImageData = event.target.result;
+        updateImagePreview(selectedImageData);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    closeImageModalButton.addEventListener('click', closeImageModal);
+    imageModal.addEventListener('click', function (event) {
+      if (event.target.dataset.action === 'close-modal' || event.target === imageModal) {
+        closeImageModal();
+      }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeImageModal();
+      }
+    });
+
+    // Scanner modal handlers: open modal, accept scanner (keyboard-wedge) input, prompt for qty
+    if (openScannerButton) openScannerButton.addEventListener('click', openScanner);
+    if (closeScannerButton) closeScannerButton.addEventListener('click', closeScanner);
+    if (scannerModal) scannerModal.addEventListener('click', function (e) { if (e.target.dataset.action === 'close-scanner' || e.target === scannerModal) closeScanner(); });
+
+    function openScanner() {
+      if (!scannerModal) return alert('Scanner not available');
+      scannerModal.classList.add('open');
+      scannerModal.setAttribute('aria-hidden', 'false');
+      if (scannerInput) { scannerInput.value = ''; scannerInput.focus(); }
+    }
+
+    function closeScanner() {
+      if (!scannerModal) return;
+      if (scannerInput) { scannerInput.blur(); scannerInput.value = ''; }
+      scannerModal.classList.remove('open');
+      scannerModal.setAttribute('aria-hidden', 'true');
+    }
+
+    function handleScannedCode(raw) {
+      const code = String(raw || '').trim();
+      if (!code) return;
+      const existing = parts.find(p => String(p.barcode || '').toLowerCase() === code.toLowerCase());
+      if (existing) {
+        const q = prompt(`Add quantity for "${existing.name}" (current ${existing.quantity}):`, '1');
+        if (!q) { return; }
+        const delta = parseInt(q, 10);
+        if (isNaN(delta) || delta <= 0) return alert('Invalid quantity');
+        existing.quantity = (existing.quantity || 0) + delta;
+        saveParts();
+        render();
+        closeScanner();
+        return;
+      }
+
+      const name = prompt(`Barcode not found. Enter a name to create new part for barcode: ${code}`);
+      if (!name) return;
+      const q2 = prompt('Initial quantity to set for the new part:', '1');
+      const qty = parseInt(q2, 10) || 0;
+      const newPart = { id: makeId(), name: name.trim(), barcode: code, quantity: qty, minStock: 1, image: null };
+      parts.unshift(newPart);
+      saveParts();
+      render();
+      closeScanner();
+      document.getElementById('name').value = newPart.name;
+      document.getElementById('barcode').value = newPart.barcode;
+      document.getElementById('quantity').value = newPart.quantity;
+    }
+
+    if (scannerInput) {
+      scannerInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          const v = scannerInput.value.trim();
+          scannerInput.value = '';
+          handleScannedCode(v);
+        }
+      });
+      scannerInput.addEventListener('paste', function () { setTimeout(() => { const v = scannerInput.value.trim(); if (v) { scannerInput.value = ''; handleScannedCode(v); } }, 50); });
+    }
+
+
+
+
+    function render() {
+      const search = searchInput.value.trim().toLowerCase();
+      const filtered = parts.filter(part => {
+        const haystack = `${part.name}`.toLowerCase();
+        return haystack.includes(search);
+      });
+
+      inventoryBody.innerHTML = '';
+      if (!filtered.length) {
+        inventoryBody.innerHTML = '<tr><td colspan="7" class="empty">No matching parts found.</td></tr>';
+      } else {
+        filtered.forEach(part => {
+          const status = getStatus(part);
+          inventoryBody.insertAdjacentHTML('beforeend', `
+            <tr>
+              <td>${part.image ? `<img src="${part.image}" alt="${escapeHtml(part.name)}" class="image-thumb" data-action="preview" />` : '—'}</td>
+              <td><strong>${escapeHtml(part.name)}</strong></td>
+              <td>${escapeHtml(part.barcode || '')}</td>
+              <td>${part.quantity}</td>
+              <td>${part.minStock}</td>
+              <td><span class="status ${status.className}">${status.label}</span></td>
+              <td>
+                <div class="actions" style="margin:0; gap: 0.25rem; align-items: center; flex-wrap: nowrap;">
+                  <button class="secondary" type="button" data-action="decrease" data-id="${part.id}">-</button>
+                  <button class="secondary" type="button" data-action="increase" data-id="${part.id}">+</button>
+                  <div class="options-wrapper">
+                    <button class="secondary options-toggle" type="button" data-action="options-toggle" aria-label="More actions">⋯</button>
+                    <div class="options-menu" role="menu">
+                      <button class="secondary" type="button" data-action="adjust-multiple" data-id="${part.id}">Add/subtract multiple</button>
+                      <button class="secondary" type="button" data-action="edit" data-id="${part.id}">Edit</button>
+                      <button class="danger" type="button" data-action="delete" data-id="${part.id}">Delete</button>
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          `);
+        });
+      }
+
+      reorderSummary.innerHTML = '';
+      if (tableScroll) {
+        tableScroll.classList.toggle('no-scroll', filtered.length === 1);
+      }
+
+      document.getElementById('totalItems').textContent = parts.length;
+      const lowStockCount = parts.filter(part => {
+        const status = getStatus(part).label;
+        return status === 'Low stock' || status === 'Reorder' || status === 'Out of stock';
+      }).length;
+      document.getElementById('lowStockCount').textContent = lowStockCount;
+      document.getElementById('reorderCount').textContent = lowStockCount;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function resetForm() {
+      partForm.reset();
+      document.getElementById('quantity').value = 0;
+      document.getElementById('minStock').value = 1;
+      imageInput.value = '';
+      selectedImageData = null;
+      updateImagePreview(null);
+      editingId = null;
+      submitButton.textContent = 'Add part';
+    }
+
+    partForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const formData = {
+        name: document.getElementById('name').value.trim(),
+        barcode: document.getElementById('barcode').value.trim(),
+        quantity: Number(document.getElementById('quantity').value),
+        minStock: Number(document.getElementById('minStock').value),
+        image: selectedImageData
+      };
+
+      if (!formData.name) {
+        alert('Please enter a part name.');
+        return;
+      }
+
+      if (editingId) {
+        updatePart(editingId, formData).then(success => {
+          if (success) {
+            render();
+            resetForm();
+          }
+        });
+      } else {
+        addPart(formData).then(success => {
+          if (success) {
+            render();
+            resetForm();
+          }
+        });
+      }
+    });
+
+    cancelEditButton.addEventListener('click', resetForm);
+    searchInput.addEventListener('input', render);
+
+    function closeAllOptionMenus() {
+      document.querySelectorAll('.options-menu.open').forEach(menu => menu.classList.remove('open'));
+    }
+
+    document.addEventListener('click', function (event) {
+      if (!event.target.closest('.options-wrapper')) {
+        closeAllOptionMenus();
+      }
+    });
+
+    inventoryBody.addEventListener('click', function (event) {
+      const previewImage = event.target.closest('img[data-action="preview"]');
+      if (previewImage) {
+        openImageModal(previewImage.src, previewImage.alt);
+        return;
+      }
+
+      const button = event.target.closest('button');
+      if (!button) return;
+      const { action, id } = button.dataset;
+
+      if (action === 'increase') {
+        adjustQuantity(id, 1);
+        return;
+      }
+
+      if (action === 'decrease') {
+        adjustQuantity(id, -1);
+        return;
+      }
+
+      if (action === 'adjust-multiple') {
+        adjustQuantityMultiple(id);
+        return;
+      }
+
+      if (action === 'options-toggle') {
+        const wrapper = button.closest('.options-wrapper');
+        const menu = wrapper && wrapper.querySelector('.options-menu');
+        if (menu) {
+          menu.classList.toggle('open');
+        }
+        return;
+      }
+
+      if (action === 'edit') {
+        const part = parts.find(item => item.id === id);
+        if (!part) return;
+        editingId = part.id;
+        document.getElementById('partId').value = part.id;
+        document.getElementById('name').value = part.name;
+        document.getElementById('barcode').value = part.barcode || '';
+        document.getElementById('quantity').value = part.quantity;
+        document.getElementById('minStock').value = part.minStock;
+        selectedImageData = part.image || null;
+        updateImagePreview(selectedImageData);
+        imageInput.value = '';
+        submitButton.textContent = 'Update part';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      if (action === 'delete') {
+        const confirmDelete = window.confirm('Delete this part from inventory?');
+        if (!confirmDelete) return;
+        deletePart(id).then(success => {
+          if (success) {
+            render();
+          }
+        });
+      }
+    });
+
+    // Initialize the app
+    (async () => {
+      parts = await loadParts();
+      render();
+    })();
+  </script>
+</body>
+</html>
