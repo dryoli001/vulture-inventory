@@ -609,6 +609,7 @@
     let cameraStream = null;
     let nativeBarcodeDetector = null;
     let nativeScannerFrameId = null;
+    const preferredLinearFormats = ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'];
 
     async function loadParts() {
       try {
@@ -887,6 +888,22 @@
       return !!(window.ZXing || window.BarcodeDetector);
     }
 
+    async function canUseNativeBarcodeDetectorForLinearCodes() {
+      if (!window.BarcodeDetector) {
+        return false;
+      }
+      if (typeof BarcodeDetector.getSupportedFormats !== 'function') {
+        return true;
+      }
+      try {
+        const supported = await BarcodeDetector.getSupportedFormats();
+        return preferredLinearFormats.some(format => supported.includes(format));
+      } catch (error) {
+        console.warn('Could not read native barcode formats:', error);
+        return false;
+      }
+    }
+
     function startNativeBarcodeDetectorLoop() {
       if (!window.BarcodeDetector || !scannerVideo) {
         return false;
@@ -960,7 +977,8 @@
           return;
         }
 
-        if (window.BarcodeDetector) {
+        const nativeLinearSupported = await canUseNativeBarcodeDetectorForLinearCodes();
+        if (nativeLinearSupported) {
           const nativeStarted = startNativeBarcodeDetectorLoop();
           if (nativeStarted) {
             setCameraHelpExpanded(false);
