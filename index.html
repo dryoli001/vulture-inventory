@@ -307,6 +307,40 @@
       justify-content: center;
     }
 
+    .scanner-camera-section {
+      margin-top: 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.14);
+      overflow: hidden;
+      background: rgba(255,255,255,0.03);
+    }
+
+    #scannerVideo {
+      width: 100%;
+      max-height: 300px;
+      display: block;
+      background: #000;
+      object-fit: cover;
+    }
+
+    .scanner-status {
+      padding: 8px 10px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .scanner-actions {
+      display: flex;
+      gap: 8px;
+      padding: 10px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .scanner-actions button {
+      margin: 0;
+    }
+
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
     }
@@ -416,8 +450,15 @@
           <div class="image-modal-backdrop" data-action="close-scanner"></div>
           <div class="image-modal-content" role="dialog" aria-modal="true">
             <button type="button" class="modal-close" id="closeScanner" aria-label="Close">×</button>
-            <div class="small">Scan a barcode using a hardware (keyboard) scanner. The scanner should send the code followed by Enter.</div>
-            <input id="scannerInput" type="text" autocomplete="off" style="width:100%; margin-top:8px; padding:10px; font-size:16px;" placeholder="Awaiting scan..." />
+            <div class="small">Use your phone camera to scan a barcode, or type/paste it manually.</div>
+            <div id="cameraScannerSection" class="scanner-camera-section" style="display:none;">
+              <video id="scannerVideo" playsinline muted></video>
+              <div id="cameraStatus" class="scanner-status">Starting camera…</div>
+              <div class="scanner-actions">
+                <button class="secondary" type="button" id="retryCamera">Retry camera</button>
+              </div>
+            </div>
+            <input id="scannerInput" type="text" autocomplete="off" style="width:100%; margin-top:10px; padding:10px; font-size:16px;" placeholder="Scan, type, or paste barcode" />
           </div>
         </div>
         
@@ -430,6 +471,7 @@
     window.supabaseCreateClient = createClient;
     console.log("✓ Supabase module loaded from Skypack");
   </script>
+  <script src="https://unpkg.com/@zxing/library@0.21.3"></script>
   <script>
     // Supabase Configuration
     const SUPABASE_URL = 'https://khepitixnrezlnyablfd.supabase.co';
@@ -493,11 +535,18 @@
     const scannerModal = document.getElementById('scannerModal');
     const closeScannerButton = document.getElementById('closeScanner');
     const scannerInput = document.getElementById('scannerInput');
+    const scannerVideo = document.getElementById('scannerVideo');
+    const cameraStatus = document.getElementById('cameraStatus');
+    const cameraScannerSection = document.getElementById('cameraScannerSection');
+    const retryCameraButton = document.getElementById('retryCamera');
     const tableScroll = document.querySelector('.table-scroll');
 
     let parts = [];
     let editingId = null;
     let selectedImageData = null;
+    let scannerCodeReader = null;
+    let cameraScannerActive = false;
+    let cameraResultLocked = false;
 
     async function loadParts() {
       try {
@@ -727,20 +776,98 @@
       }
     });
 
-    // Scanner modal handlers: open modal, accept scanner (keyboard-wedge) input, prompt for qty
+    // Scanner modal handlers: mobile camera scan (ZXing) + manual input fallback
     if (openScannerButton) openScannerButton.addEventListener('click', openScanner);
     if (closeScannerButton) closeScannerButton.addEventListener('click', closeScanner);
     if (scannerModal) scannerModal.addEventListener('click', function (e) { if (e.target.dataset.action === 'close-scanner' || e.target === scannerModal) closeScanner(); });
+    if (retryCameraButton) retryCameraButton.addEventListener('click', startCameraScanner);
+
+    function setCameraStatus(message) {
+      if (cameraStatus) {
+        cameraStatus.textContent = message;
+      }
+    }
+
+    function stopCameraScanner() {
+      cameraScannerActive = false;
+      cameraResultLocked = false;
+      if (scannerCodeReader) {
+        scannerCodeReader.reset();
+      }
+      if (scannerVideo && scannerVideo.srcObject) {
+        const tracks = scannerVideo.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+        scannerVideo.srcObject = null;
+      }
+      if (cameraScannerSection) {
+        cameraScannerSection.style.display = 'none';
+      }
+    }
+
+    function canUseCameraScanner() {
+      return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.ZXing);
+    }
+
+    async function startCameraScanner() {
+      if (!canUseCameraScanner()) {
+        setCameraStatus('Camera scan unavailable in this browser or context. Use manual input below.');
+        if (cameraScannerSection) {
+          cameraScannerSection.style.display = 'block';
+        }
+        return;
+      }
+
+      try {
+        stopCameraScanner();
+        if (cameraScannerSection) {
+          cameraScannerSection.style.display = 'block';
+        }
+        setCameraStatus('Point the camera at a barcode...');
+
+        if (!scannerCodeReader) {
+          scannerCodeReader = new ZXing.BrowserMultiFormatReader();
+        }
+
+        cameraScannerActive = true;
+        cameraResultLocked = false;
+
+        const videoDevices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+        let deviceId = null;
+
+        if (videoDevices && videoDevices.length) {
+          const preferred = videoDevices.find(device => /back|rear|environment/i.test(device.label || ''));
+          deviceId = preferred ? preferred.deviceId : videoDevices[0].deviceId;
+        }
+
+        scannerCodeReader.decodeFromVideoDevice(deviceId, scannerVideo, (result, error) => {
+          if (!cameraScannerActive || cameraResultLocked) {
+            return;
+          }
+          if (result) {
+            cameraResultLocked = true;
+            setCameraStatus('Barcode found. Applying...');
+            handleScannedCode(result.getText());
+          } else if (error && !(error instanceof ZXing.NotFoundException)) {
+            setCameraStatus('Scanning... hold steady over the barcode.');
+          }
+        });
+      } catch (error) {
+        console.error('Unable to start camera scanner:', error);
+        setCameraStatus('Could not access camera. Allow camera permission, then tap Retry camera.');
+      }
+    }
 
     function openScanner() {
       if (!scannerModal) return alert('Scanner not available');
       scannerModal.classList.add('open');
       scannerModal.setAttribute('aria-hidden', 'false');
       if (scannerInput) { scannerInput.value = ''; scannerInput.focus(); }
+      startCameraScanner();
     }
 
     function closeScanner() {
       if (!scannerModal) return;
+      stopCameraScanner();
       if (scannerInput) { scannerInput.blur(); scannerInput.value = ''; }
       scannerModal.classList.remove('open');
       scannerModal.setAttribute('aria-hidden', 'true');
@@ -749,36 +876,9 @@
     function handleScannedCode(raw) {
       const code = String(raw || '').trim();
       if (!code) return;
-      const existing = parts.find(p => String(p.barcode || '').toLowerCase() === code.toLowerCase());
-      if (existing) {
-        const q = prompt(`Add quantity for "${existing.name}" (current ${existing.quantity}):`, '1');
-        if (!q) { return; }
-        const delta = parseInt(q, 10);
-        if (isNaN(delta) || delta <= 0) return alert('Invalid quantity');
-        const newQuantity = (existing.quantity || 0) + delta;
-        updateQuantity(existing.id, newQuantity).then(success => {
-          if (success) {
-            render();
-            closeScanner();
-          }
-        });
-        return;
-      }
-
-      const name = prompt(`Barcode not found. Enter a name to create new part for barcode: ${code}`);
-      if (!name) return;
-      const q2 = prompt('Initial quantity to set for the new part:', '1');
-      const qty = parseInt(q2, 10) || 0;
-      const newPart = { name: name.trim(), barcode: code, quantity: qty, minstock: 1, image: null };
-      addPart(newPart).then(success => {
-        if (success) {
-          render();
-          closeScanner();
-          document.getElementById('name').value = newPart.name;
-          document.getElementById('barcode').value = newPart.barcode;
-          document.getElementById('quantity').value = newPart.quantity;
-        }
-      });
+      document.getElementById('barcode').value = code;
+      closeScanner();
+      document.getElementById('quantity').focus();
     }
 
     if (scannerInput) {
