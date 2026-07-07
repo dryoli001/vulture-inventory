@@ -893,9 +893,7 @@
       }
 
       if (!nativeBarcodeDetector) {
-        nativeBarcodeDetector = new BarcodeDetector({
-          formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar']
-        });
+        nativeBarcodeDetector = new BarcodeDetector();
       }
 
       const scanFrame = async () => {
@@ -952,6 +950,10 @@
           await scannerVideo.play().catch(() => {});
         }
 
+        // Mark scanner active before starting any detection path.
+        cameraScannerActive = true;
+        cameraResultLocked = false;
+
         if (!hasDecoderSupport()) {
           setCameraStatus('Camera access granted, but no barcode decoder is available in this browser. You can still type or paste the barcode below.');
           setCameraHelpExpanded(true);
@@ -970,9 +972,6 @@
         if (!scannerCodeReader) {
           scannerCodeReader = new ZXing.BrowserMultiFormatReader();
         }
-
-        cameraScannerActive = true;
-        cameraResultLocked = false;
 
         const videoDevices = await ZXing.BrowserCodeReader.listVideoInputDevices();
         let deviceId = null;
