@@ -341,6 +341,35 @@
       margin: 0;
     }
 
+    .scanner-help {
+      margin-top: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.03);
+      padding: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .scanner-help summary {
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .scanner-help h4 {
+      margin: 10px 0 4px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .scanner-help ol {
+      margin: 6px 0 0 18px;
+      padding: 0;
+    }
+
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
     }
@@ -452,13 +481,41 @@
             <button type="button" class="modal-close" id="closeScanner" aria-label="Close">×</button>
             <div class="small">Use your phone camera to scan a barcode, or type/paste it manually.</div>
             <div id="cameraScannerSection" class="scanner-camera-section" style="display:none;">
-              <video id="scannerVideo" playsinline muted></video>
+              <video id="scannerVideo" playsinline muted autoplay></video>
               <div id="cameraStatus" class="scanner-status">Starting camera…</div>
               <div class="scanner-actions">
+                <button class="secondary" type="button" id="enableCamera">Enable camera</button>
                 <button class="secondary" type="button" id="retryCamera">Retry camera</button>
               </div>
             </div>
             <input id="scannerInput" type="text" autocomplete="off" style="width:100%; margin-top:10px; padding:10px; font-size:16px;" placeholder="Scan, type, or paste barcode" />
+            <details class="scanner-help" id="cameraHelp">
+              <summary>Camera help (iPhone + Android)</summary>
+              <div>
+                <h4>iPhone (Safari)</h4>
+                <ol>
+                  <li>Open iPhone Settings.</li>
+                  <li>Go to Safari, then Camera.</li>
+                  <li>Set camera access to Allow.</li>
+                  <li>Return to this page and tap Enable camera again.</li>
+                </ol>
+
+                <h4>Android (Chrome)</h4>
+                <ol>
+                  <li>Open this site in Chrome.</li>
+                  <li>Tap the lock icon near the address bar, then Permissions.</li>
+                  <li>Set Camera to Allow.</li>
+                  <li>Reload the page, then tap Enable camera.</li>
+                </ol>
+
+                <h4>If the preview is still black</h4>
+                <ol>
+                  <li>Close other apps using the camera.</li>
+                  <li>Switch browser tab away and back, then tap Retry camera.</li>
+                  <li>Make sure this page is loaded from HTTPS.</li>
+                </ol>
+              </div>
+            </details>
           </div>
         </div>
         
@@ -538,6 +595,8 @@
     const scannerVideo = document.getElementById('scannerVideo');
     const cameraStatus = document.getElementById('cameraStatus');
     const cameraScannerSection = document.getElementById('cameraScannerSection');
+    const cameraHelp = document.getElementById('cameraHelp');
+    const enableCameraButton = document.getElementById('enableCamera');
     const retryCameraButton = document.getElementById('retryCamera');
     const tableScroll = document.querySelector('.table-scroll');
 
@@ -547,6 +606,9 @@
     let scannerCodeReader = null;
     let cameraScannerActive = false;
     let cameraResultLocked = false;
+    let cameraStream = null;
+    let nativeBarcodeDetector = null;
+    let nativeScannerFrameId = null;
 
     async function loadParts() {
       try {
@@ -780,6 +842,7 @@
     if (openScannerButton) openScannerButton.addEventListener('click', openScanner);
     if (closeScannerButton) closeScannerButton.addEventListener('click', closeScanner);
     if (scannerModal) scannerModal.addEventListener('click', function (e) { if (e.target.dataset.action === 'close-scanner' || e.target === scannerModal) closeScanner(); });
+    if (enableCameraButton) enableCameraButton.addEventListener('click', startCameraScanner);
     if (retryCameraButton) retryCameraButton.addEventListener('click', startCameraScanner);
 
     function setCameraStatus(message) {
@@ -788,15 +851,27 @@
       }
     }
 
+    function setCameraHelpExpanded(expanded) {
+      if (!cameraHelp) return;
+      cameraHelp.open = !!expanded;
+    }
+
     function stopCameraScanner() {
       cameraScannerActive = false;
       cameraResultLocked = false;
+      if (nativeScannerFrameId) {
+        cancelAnimationFrame(nativeScannerFrameId);
+        nativeScannerFrameId = null;
+      }
       if (scannerCodeReader) {
         scannerCodeReader.reset();
       }
-      if (scannerVideo && scannerVideo.srcObject) {
-        const tracks = scannerVideo.srcObject.getTracks();
+      if (cameraStream) {
+        const tracks = cameraStream.getTracks();
         tracks.forEach(track => track.stop());
+        cameraStream = null;
+      }
+      if (scannerVideo && scannerVideo.srcObject) {
         scannerVideo.srcObject = null;
       }
       if (cameraScannerSection) {
@@ -805,12 +880,50 @@
     }
 
     function canUseCameraScanner() {
-      return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.ZXing);
+      return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    }
+
+    function hasDecoderSupport() {
+      return !!(window.ZXing || window.BarcodeDetector);
+    }
+
+    function startNativeBarcodeDetectorLoop() {
+      if (!window.BarcodeDetector || !scannerVideo) {
+        return false;
+      }
+
+      if (!nativeBarcodeDetector) {
+        nativeBarcodeDetector = new BarcodeDetector({
+          formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar']
+        });
+      }
+
+      const scanFrame = async () => {
+        if (!cameraScannerActive || cameraResultLocked) {
+          return;
+        }
+        try {
+          const barcodes = await nativeBarcodeDetector.detect(scannerVideo);
+          if (barcodes && barcodes.length && barcodes[0].rawValue) {
+            cameraResultLocked = true;
+            setCameraStatus('Barcode found. Applying...');
+            handleScannedCode(barcodes[0].rawValue);
+            return;
+          }
+        } catch (error) {
+          console.warn('Native barcode detection failed:', error);
+        }
+        nativeScannerFrameId = requestAnimationFrame(scanFrame);
+      };
+
+      nativeScannerFrameId = requestAnimationFrame(scanFrame);
+      return true;
     }
 
     async function startCameraScanner() {
       if (!canUseCameraScanner()) {
-        setCameraStatus('Camera scan unavailable in this browser or context. Use manual input below.');
+        setCameraStatus('Camera scan unavailable here. Open the site on HTTPS and allow camera access, or use manual input below.');
+        setCameraHelpExpanded(true);
         if (cameraScannerSection) {
           cameraScannerSection.style.display = 'block';
         }
@@ -822,7 +935,37 @@
         if (cameraScannerSection) {
           cameraScannerSection.style.display = 'block';
         }
-        setCameraStatus('Point the camera at a barcode...');
+        setCameraStatus('Tap Allow when prompted, then point camera at a barcode...');
+
+        if (enableCameraButton) {
+          enableCameraButton.disabled = true;
+        }
+
+        // Explicit permission request to force mobile browser camera prompt.
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false
+        });
+
+        if (scannerVideo) {
+          scannerVideo.srcObject = cameraStream;
+          await scannerVideo.play().catch(() => {});
+        }
+
+        if (!hasDecoderSupport()) {
+          setCameraStatus('Camera access granted, but no barcode decoder is available in this browser. You can still type or paste the barcode below.');
+          setCameraHelpExpanded(true);
+          return;
+        }
+
+        if (window.BarcodeDetector) {
+          const nativeStarted = startNativeBarcodeDetectorLoop();
+          if (nativeStarted) {
+            setCameraHelpExpanded(false);
+            setCameraStatus('Camera ready. Hold barcode inside the frame.');
+            return;
+          }
+        }
 
         if (!scannerCodeReader) {
           scannerCodeReader = new ZXing.BrowserMultiFormatReader();
@@ -851,9 +994,21 @@
             setCameraStatus('Scanning... hold steady over the barcode.');
           }
         });
+        setCameraHelpExpanded(false);
+        setCameraStatus('Camera ready. Hold barcode inside the frame.');
       } catch (error) {
         console.error('Unable to start camera scanner:', error);
-        setCameraStatus('Could not access camera. Allow camera permission, then tap Retry camera.');
+        setCameraHelpExpanded(true);
+        const denied = error && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError');
+        if (denied) {
+          setCameraStatus('Camera permission is blocked. In browser site settings, set Camera to Allow, then tap Enable camera again.');
+        } else {
+          setCameraStatus('Could not access camera. Tap Retry camera and allow permission if asked.');
+        }
+      } finally {
+        if (enableCameraButton) {
+          enableCameraButton.disabled = false;
+        }
       }
     }
 
@@ -861,6 +1016,7 @@
       if (!scannerModal) return alert('Scanner not available');
       scannerModal.classList.add('open');
       scannerModal.setAttribute('aria-hidden', 'false');
+      setCameraHelpExpanded(false);
       if (scannerInput) { scannerInput.value = ''; scannerInput.focus(); }
       startCameraScanner();
     }
