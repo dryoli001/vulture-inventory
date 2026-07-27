@@ -54,6 +54,38 @@
       color: var(--text);
     }
 
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .tab-button {
+      width: auto;
+      min-width: 170px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .tab-button.active {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-color: transparent;
+      color: #07111f;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
     .stats {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -236,6 +268,48 @@
 
     .summary-item strong { display: block; margin-bottom: 5px; }
 
+    .team-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+    }
+
+    .team-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .team-meta {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .history-toggle-wrap {
+      margin-top: 12px;
+    }
+
+    .history-toggle-wrap button {
+      width: auto;
+      min-width: 260px;
+    }
+
+    .history-panel {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .history-panel .table-scroll {
+      max-height: 260px;
+      margin-bottom: 0;
+      padding-right: 2px;
+    }
+
     .image-thumb {
       width: 72px;
       height: 64px;
@@ -372,6 +446,7 @@
 
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
+      .team-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 620px) {
@@ -390,6 +465,12 @@
       </div>
     </header>
 
+    <div class="tabs" role="tablist" aria-label="Main sections">
+      <button type="button" class="tab-button active" id="inventoryTabButton" data-tab="inventory" role="tab" aria-selected="true">Spare Parts</button>
+      <button type="button" class="tab-button" id="teamTabButton" data-tab="team" role="tab" aria-selected="false">Team Tool Sign-Out</button>
+    </div>
+
+    <section id="inventoryTabPanel" class="tab-panel active" role="tabpanel" aria-labelledby="inventoryTabButton">
     <section class="stats">
       <div class="card">
         <h3>Total Parts</h3>
@@ -443,7 +524,7 @@
 
       <section class="panel">
         <div class="toolbar" style="justify-content: space-between; align-items: center;">
-          <h2 style="margin: 0;">Inventory</h2>
+          <h2 style="margin: 0;">Spare Parts</h2>
           <input type="search" id="searchInput" placeholder="Search parts" style="flex: 1; max-width: 360px; min-width: 200px;" />
         </div>
 
@@ -521,6 +602,103 @@
         
       </section>
     </div>
+    </section>
+
+    <section id="teamTabPanel" class="tab-panel" role="tabpanel" aria-labelledby="teamTabButton">
+      <div class="team-grid">
+        <section class="panel">
+          <h2 style="margin-top: 0;">Sign out tools to another team</h2>
+          <form id="signOutForm">
+            <label>
+              My team
+              <input type="text" id="fromTeam" value="VULTR" required />
+            </label>
+            <label>
+              Receiving team
+              <input type="text" id="toTeam" placeholder="Example: Electrical" required />
+            </label>
+            <label>
+              Tool name
+              <input type="text" id="transferToolName" placeholder="Example: Torque Wrench" required />
+            </label>
+            <div class="row">
+              <label>
+                Quantity to sign out
+                <input type="number" id="transferQty" min="1" value="1" required />
+              </label>
+              <label>
+                Expected return date
+                <input type="date" id="dueDate" />
+              </label>
+            </div>
+            <label>
+              Notes
+              <input type="text" id="transferNotes" placeholder="Optional details" />
+            </label>
+            <div class="actions">
+              <button class="primary" type="submit" id="signOutSubmitButton">Sign out tool</button>
+              <button class="secondary" type="button" id="cancelSignOutEdit" style="display:none;">Cancel edit</button>
+            </div>
+            <div class="small" style="margin-top:10px;">Tools are tracked separately from parts inventory.</div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="toolbar" style="justify-content: space-between; align-items: center;">
+            <h2 style="margin: 0;">Sign-out log</h2>
+            <input type="text" id="myTeamFilter" value="VULTR" placeholder="My team name" style="flex: 1; max-width: 260px; min-width: 180px;" />
+          </div>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tool</th>
+                  <th>Qty</th>
+                  <th>From Team</th>
+                  <th>To Team</th>
+                  <th>Signed Out</th>
+                  <th>Due</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="signOutBody"></tbody>
+            </table>
+          </div>
+
+          <h3 style="margin: 4px 0 0;">My Team Tools Snapshot</h3>
+          <div class="team-summary-grid">
+            <div class="summary-item">
+              <strong id="outgoingTitle">Currently lent out</strong>
+              <div id="myTeamOutgoing" class="small">No tools currently lent out.</div>
+            </div>
+          </div>
+          <div class="history-toggle-wrap">
+            <button class="secondary" type="button" id="toggleHistoryButton" aria-expanded="false">Previous sign-outs from VULTR: 0 record(s)</button>
+          </div>
+          <div id="historyPanel" class="history-panel" hidden>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tool</th>
+                    <th>Qty</th>
+                    <th>To Team</th>
+                    <th>Signed Out</th>
+                    <th>Returned</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="previousSignOutBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="myTeamMeta" class="team-meta"></div>
+        </section>
+      </div>
+    </section>
+
   </div>
 
   <script type="module">
@@ -599,6 +777,26 @@
     const enableCameraButton = document.getElementById('enableCamera');
     const retryCameraButton = document.getElementById('retryCamera');
     const tableScroll = document.querySelector('.table-scroll');
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const inventoryTabPanel = document.getElementById('inventoryTabPanel');
+    const teamTabPanel = document.getElementById('teamTabPanel');
+    const signOutForm = document.getElementById('signOutForm');
+    const fromTeamInput = document.getElementById('fromTeam');
+    const toTeamInput = document.getElementById('toTeam');
+    const transferToolNameInput = document.getElementById('transferToolName');
+    const transferQtyInput = document.getElementById('transferQty');
+    const dueDateInput = document.getElementById('dueDate');
+    const transferNotesInput = document.getElementById('transferNotes');
+    const signOutSubmitButton = document.getElementById('signOutSubmitButton');
+    const cancelSignOutEditButton = document.getElementById('cancelSignOutEdit');
+    const signOutBody = document.getElementById('signOutBody');
+    const myTeamFilterInput = document.getElementById('myTeamFilter');
+    const myTeamOutgoing = document.getElementById('myTeamOutgoing');
+    const outgoingTitle = document.getElementById('outgoingTitle');
+    const toggleHistoryButton = document.getElementById('toggleHistoryButton');
+    const historyPanel = document.getElementById('historyPanel');
+    const previousSignOutBody = document.getElementById('previousSignOutBody');
+    const myTeamMeta = document.getElementById('myTeamMeta');
 
     let parts = [];
     let editingId = null;
@@ -609,7 +807,295 @@
     let cameraStream = null;
     let nativeBarcodeDetector = null;
     let nativeScannerFrameId = null;
+    let signOutRecords = [];
+    let historyPanelOpen = false;
+    let editingSignOutId = null;
     const preferredLinearFormats = ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'];
+
+    function mapSignOutRow(row) {
+      if (!row) return null;
+      return {
+        id: row.id,
+        partId: row.part_id,
+        partName: row.part_name,
+        quantity: row.quantity,
+        fromTeam: row.from_team,
+        toTeam: row.to_team,
+        signedOutAt: row.signed_out_at,
+        dueDate: row.due_date,
+        notes: row.notes,
+        status: row.status,
+        returnedAt: row.returned_at
+      };
+    }
+
+    async function loadSignOutRecords() {
+      if (!supabaseClient) {
+        return [];
+      }
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('tool_signouts')
+          .select('*')
+          .order('signed_out_at', { ascending: false });
+
+        if (error) {
+          console.warn('Could not load sign-out records from Supabase:', error);
+          return [];
+        }
+
+        return (data || []).map(mapSignOutRow).filter(Boolean);
+      } catch (error) {
+        console.warn('Could not load sign-out records:', error);
+        return [];
+      }
+    }
+
+    async function createSignOutRecord(record) {
+      if (!supabaseClient) {
+        return null;
+      }
+
+      const payload = {
+        id: record.id,
+        part_id: record.partId || null,
+        part_name: record.partName,
+        quantity: record.quantity,
+        from_team: record.fromTeam,
+        to_team: record.toTeam,
+        signed_out_at: record.signedOutAt,
+        due_date: record.dueDate,
+        notes: record.notes,
+        status: record.status,
+        returned_at: record.returnedAt
+      };
+
+      const { data, error } = await supabaseClient
+        .from('tool_signouts')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('Could not create sign-out record:', error);
+        return null;
+      }
+
+      return mapSignOutRow(data);
+    }
+
+    async function markSignOutReturned(recordId, returnedAt) {
+      if (!supabaseClient) {
+        return false;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('tool_signouts')
+        .update({ status: 'returned', returned_at: returnedAt })
+        .eq('id', recordId)
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('Could not mark sign-out returned:', error);
+        return false;
+      }
+
+      signOutRecords = signOutRecords.map(item => item.id === recordId ? mapSignOutRow(data) : item);
+      return true;
+    }
+
+    async function updateSignOutRecord(recordId, updates) {
+      if (!supabaseClient) {
+        return null;
+      }
+
+      const payload = {
+        part_name: updates.partName,
+        quantity: updates.quantity,
+        from_team: updates.fromTeam,
+        to_team: updates.toTeam,
+        due_date: updates.dueDate,
+        notes: updates.notes
+      };
+
+      const { data, error } = await supabaseClient
+        .from('tool_signouts')
+        .update(payload)
+        .eq('id', recordId)
+        .eq('status', 'out')
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('Could not update sign-out record:', error);
+        return null;
+      }
+
+      const mapped = mapSignOutRow(data);
+      signOutRecords = signOutRecords.map(item => item.id === recordId ? mapped : item);
+      return mapped;
+    }
+
+    function resetSignOutForm() {
+      editingSignOutId = null;
+      signOutForm.reset();
+      transferQtyInput.value = 1;
+      if (signOutSubmitButton) {
+        signOutSubmitButton.textContent = 'Sign out tool';
+      }
+      if (cancelSignOutEditButton) {
+        cancelSignOutEditButton.style.display = 'none';
+      }
+    }
+
+    function startSignOutEdit(record) {
+      if (!record || record.status === 'returned') {
+        return;
+      }
+
+      editingSignOutId = record.id;
+      transferToolNameInput.value = record.partName || '';
+      fromTeamInput.value = record.fromTeam || 'VULTR';
+      toTeamInput.value = record.toTeam || '';
+      transferQtyInput.value = Number(record.quantity) > 0 ? String(record.quantity) : '1';
+      dueDateInput.value = record.dueDate || '';
+      transferNotesInput.value = record.notes || '';
+
+      if (signOutSubmitButton) {
+        signOutSubmitButton.textContent = 'Update sign-out';
+      }
+      if (cancelSignOutEditButton) {
+        cancelSignOutEditButton.style.display = 'inline-block';
+      }
+
+      switchTab('team');
+      signOutForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      transferToolNameInput.focus();
+    }
+
+    function formatDate(dateString) {
+      if (!dateString) return '—';
+      const parsed = new Date(dateString);
+      if (Number.isNaN(parsed.getTime())) return '—';
+      return parsed.toLocaleDateString();
+    }
+
+    function switchTab(tabName) {
+      const tabPanels = {
+        inventory: inventoryTabPanel,
+        team: teamTabPanel
+      };
+
+      Object.entries(tabPanels).forEach(([name, panel]) => {
+        if (!panel) return;
+        panel.classList.toggle('active', name === tabName);
+      });
+
+      tabButtons.forEach(button => {
+        const active = button.dataset.tab === tabName;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+    }
+
+    function summarizeRecordsByTool(records) {
+      const totals = new Map();
+      records.forEach(record => {
+        const key = record.partName || 'Unknown tool';
+        const current = totals.get(key) || 0;
+        totals.set(key, current + (Number(record.quantity) || 0));
+      });
+      if (!totals.size) return 'None';
+      return Array.from(totals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, qty]) => `${escapeHtml(name)} (${qty})`)
+        .join(', ');
+    }
+
+    function renderTeamTab() {
+      if (!signOutBody) return;
+      const sorted = signOutRecords
+        .slice()
+        .sort((a, b) => new Date(b.signedOutAt).getTime() - new Date(a.signedOutAt).getTime());
+      const activeSignOuts = sorted.filter(record => record.status !== 'returned');
+
+      signOutBody.innerHTML = '';
+      if (!activeSignOuts.length) {
+        signOutBody.innerHTML = '<tr><td colspan="8" class="empty">No active sign-outs.</td></tr>';
+      } else {
+        activeSignOuts.forEach(record => {
+          signOutBody.insertAdjacentHTML('beforeend', `
+            <tr>
+              <td><strong>${escapeHtml(record.partName)}</strong></td>
+              <td>${record.quantity}</td>
+              <td>${escapeHtml(record.fromTeam)}</td>
+              <td>${escapeHtml(record.toTeam)}</td>
+              <td>${formatDate(record.signedOutAt)}</td>
+              <td>${formatDate(record.dueDate)}</td>
+              <td><span class="status status-low">Out</span></td>
+              <td>
+                <div class="actions" style="margin:0; gap: 0.25rem; align-items: center; flex-wrap: nowrap;">
+                  <button class="secondary" type="button" data-action="return" data-id="${record.id}">Mark returned</button>
+                  <div class="options-wrapper">
+                    <button class="secondary options-toggle" type="button" data-action="options-toggle" aria-label="More actions">⋯</button>
+                    <div class="options-menu" role="menu">
+                      <button class="secondary" type="button" data-action="edit-signout" data-id="${record.id}">Edit</button>
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          `);
+        });
+      }
+
+      const myTeam = (myTeamFilterInput && myTeamFilterInput.value.trim()) || 'VULTR';
+      if (outgoingTitle) {
+        outgoingTitle.textContent = `Currently lent out by ${myTeam}`;
+      }
+
+      const outgoing = signOutRecords.filter(record =>
+        record.status !== 'returned' && record.fromTeam.toLowerCase() === myTeam.toLowerCase()
+      );
+
+      const previous = signOutRecords
+        .filter(record => record.status === 'returned' && record.fromTeam.toLowerCase() === myTeam.toLowerCase())
+        .sort((a, b) => new Date(b.returnedAt || b.signedOutAt).getTime() - new Date(a.returnedAt || a.signedOutAt).getTime());
+
+      myTeamOutgoing.textContent = summarizeRecordsByTool(outgoing);
+
+      if (toggleHistoryButton) {
+        toggleHistoryButton.textContent = `Previous sign-outs from ${myTeam}: ${previous.length} record(s)`;
+        toggleHistoryButton.setAttribute('aria-expanded', historyPanelOpen ? 'true' : 'false');
+      }
+
+      if (historyPanel) {
+        historyPanel.hidden = !historyPanelOpen;
+      }
+
+      if (previousSignOutBody) {
+        if (!previous.length) {
+          previousSignOutBody.innerHTML = '<tr><td colspan="6" class="empty">No previous sign-outs for this team yet.</td></tr>';
+        } else {
+          previousSignOutBody.innerHTML = previous.map(record => `
+            <tr>
+              <td><strong>${escapeHtml(record.partName)}</strong></td>
+              <td>${record.quantity}</td>
+              <td>${escapeHtml(record.toTeam)}</td>
+              <td>${formatDate(record.signedOutAt)}</td>
+              <td>${formatDate(record.returnedAt)}</td>
+              <td>${escapeHtml(record.notes || '—')}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      myTeamMeta.textContent = historyPanelOpen
+        ? `Showing previous sign-outs for ${myTeam}.`
+        : `Click to view previous sign-outs for ${myTeam}.`;
+    }
 
     async function loadParts() {
       try {
@@ -1120,6 +1606,7 @@
       }).length;
       document.getElementById('lowStockCount').textContent = lowStockCount;
       document.getElementById('reorderCount').textContent = lowStockCount;
+      renderTeamTab();
     }
 
     function escapeHtml(text) {
@@ -1176,6 +1663,162 @@
 
     cancelEditButton.addEventListener('click', resetForm);
     searchInput.addEventListener('input', render);
+    tabButtons.forEach(button => {
+      button.addEventListener('click', function () {
+        switchTab(button.dataset.tab);
+      });
+    });
+
+    if (myTeamFilterInput) {
+      myTeamFilterInput.addEventListener('input', renderTeamTab);
+    }
+
+    if (toggleHistoryButton) {
+      toggleHistoryButton.addEventListener('click', function () {
+        historyPanelOpen = !historyPanelOpen;
+        renderTeamTab();
+      });
+    }
+
+    if (cancelSignOutEditButton) {
+      cancelSignOutEditButton.addEventListener('click', resetSignOutForm);
+    }
+
+    if (fromTeamInput && myTeamFilterInput) {
+      fromTeamInput.addEventListener('input', function () {
+        if (!myTeamFilterInput.value.trim()) {
+          myTeamFilterInput.value = fromTeamInput.value;
+          renderTeamTab();
+        }
+      });
+    }
+
+    if (signOutForm) {
+      signOutForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const toolName = transferToolNameInput.value.trim();
+        const fromTeam = fromTeamInput.value.trim();
+        const toTeam = toTeamInput.value.trim();
+        const quantity = Number(transferQtyInput.value);
+        const dueDate = dueDateInput.value || null;
+        const notes = transferNotesInput.value.trim();
+
+        if (!toolName) {
+          alert('Please enter a tool name to sign out.');
+          return;
+        }
+        if (!fromTeam || !toTeam) {
+          alert('Please enter both team names.');
+          return;
+        }
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+          alert('Please enter a valid quantity greater than zero.');
+          return;
+        }
+        if (fromTeam.toLowerCase() === toTeam.toLowerCase()) {
+          alert('Choose a different receiving team.');
+          return;
+        }
+
+        if (editingSignOutId) {
+          const updatedRecord = await updateSignOutRecord(editingSignOutId, {
+            partName: toolName,
+            quantity,
+            fromTeam,
+            toTeam,
+            dueDate,
+            notes
+          });
+
+          if (!updatedRecord) {
+            alert('Sign-out record could not be updated in Supabase.');
+            return;
+          }
+
+          if (!myTeamFilterInput.value.trim()) {
+            myTeamFilterInput.value = fromTeam;
+          }
+
+          resetSignOutForm();
+          render();
+          return;
+        }
+
+        const createdRecord = await createSignOutRecord({
+            id: crypto.randomUUID(),
+            partId: null,
+            partName: toolName,
+            quantity,
+            fromTeam,
+            toTeam,
+            signedOutAt: new Date().toISOString(),
+            dueDate,
+            notes,
+            status: 'out',
+            returnedAt: null
+          });
+
+        if (!createdRecord) {
+          alert('Sign-out record could not be saved to Supabase.');
+          return;
+        }
+
+        signOutRecords.unshift(createdRecord);
+
+        resetSignOutForm();
+        fromTeamInput.value = fromTeam;
+        if (!myTeamFilterInput.value.trim()) {
+          myTeamFilterInput.value = fromTeam;
+        }
+
+        render();
+      });
+    }
+
+    if (signOutBody) {
+      signOutBody.addEventListener('click', async function (event) {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+
+        if (action === 'options-toggle') {
+          const wrapper = button.closest('.options-wrapper');
+          const menu = wrapper && wrapper.querySelector('.options-menu');
+          if (!menu) return;
+          const shouldOpen = !menu.classList.contains('open');
+          closeAllOptionMenus();
+          if (shouldOpen) {
+            menu.classList.add('open');
+          }
+          return;
+        }
+
+        const recordId = button.dataset.id;
+        const record = signOutRecords.find(item => item.id === recordId);
+        if (!record) return;
+
+        if (action === 'edit-signout') {
+          if (record.status === 'returned') return;
+          startSignOutEdit(record);
+          return;
+        }
+
+        if (action !== 'return' || record.status === 'returned') {
+          return;
+        }
+
+        const returnedAt = new Date().toISOString();
+
+        const markedReturned = await markSignOutReturned(record.id, returnedAt);
+        if (!markedReturned) {
+          alert('Could not update sign-out status in Supabase.');
+          return;
+        }
+
+        render();
+      });
+    }
 
     function closeAllOptionMenus() {
       document.querySelectorAll('.options-menu.open').forEach(menu => menu.classList.remove('open'));
@@ -1253,6 +1896,10 @@
     (async () => {
       await waitForSupabase();
       parts = await loadParts();
+      signOutRecords = await loadSignOutRecords();
+      if (myTeamFilterInput && !myTeamFilterInput.value.trim() && fromTeamInput) {
+        myTeamFilterInput.value = fromTeamInput.value.trim() || 'VULTR';
+      }
       render();
     })();
   </script>
