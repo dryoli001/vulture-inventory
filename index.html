@@ -1005,6 +1005,19 @@
       return parsed.toLocaleDateString();
     }
 
+    function formatDateTime(dateString) {
+      if (!dateString) return '—';
+      const parsed = new Date(dateString);
+      if (Number.isNaN(parsed.getTime())) return '—';
+      return parsed.toLocaleString([], {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    }
+
     function getSignOutStatusInfo(record) {
       if (record.status === 'returned') {
         return { label: 'Returned', className: 'status-good' };
@@ -1066,7 +1079,7 @@
               <td>${record.quantity}</td>
               <td>${escapeHtml(record.fromTeam)}</td>
               <td>${escapeHtml(record.toTeam)}</td>
-              <td>${formatDate(record.signedOutAt)}</td>
+              <td>${formatDateTime(record.signedOutAt)}</td>
               <td>${formatDate(record.dueDate)}</td>
               <td><span class="status ${statusInfo.className}">${statusInfo.label}</span></td>
               <td>
@@ -1119,8 +1132,8 @@
               <td><strong>${escapeHtml(record.partName)}</strong></td>
               <td>${record.quantity}</td>
               <td>${escapeHtml(record.toTeam)}</td>
-              <td>${formatDate(record.signedOutAt)}</td>
-              <td>${record.status === 'transferred' ? 'Transferred' : formatDate(record.returnedAt)}</td>
+              <td>${formatDateTime(record.signedOutAt)}</td>
+              <td>${record.status === 'transferred' ? 'Transferred' : formatDateTime(record.returnedAt)}</td>
               <td>${escapeHtml(record.notes || '—')}</td>
             </tr>
           `).join('');
