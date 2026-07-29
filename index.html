@@ -906,6 +906,27 @@
       return true;
     }
 
+    async function markSignOutTransferred(recordId, transferredAt) {
+      if (!supabaseClient) {
+        return { success: false, error: 'Supabase client unavailable.' };
+      }
+
+      const { data, error } = await supabaseClient
+        .from('tool_signouts')
+        .update({ status: 'transferred', returned_at: transferredAt })
+        .eq('id', recordId)
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('Could not mark sign-out transferred:', error);
+        return { success: false, error: error.message || 'Unknown Supabase error.' };
+      }
+
+      signOutRecords = signOutRecords.map(item => item.id === recordId ? mapSignOutRow(data) : item);
+      return { success: true };
+    }
+
     async function updateSignOutRecord(recordId, updates) {
       if (!supabaseClient) {
         return null;
@@ -982,6 +1003,16 @@
       return parsed.toLocaleDateString();
     }
 
+    function getSignOutStatusInfo(record) {
+      if (record.status === 'returned') {
+        return { label: 'Returned', className: 'status-good' };
+      }
+      if (record.status === 'transferred') {
+        return { label: 'Transferred', className: 'status-good' };
+      }
+      return { label: 'Out', className: 'status-low' };
+    }
+
     function switchTab(tabName) {
       const tabPanels = {
         inventory: inventoryTabPanel,
@@ -1019,13 +1050,14 @@
       const sorted = signOutRecords
         .slice()
         .sort((a, b) => new Date(b.signedOutAt).getTime() - new Date(a.signedOutAt).getTime());
-      const activeSignOuts = sorted.filter(record => record.status !== 'returned');
+      const activeSignOuts = sorted.filter(record => record.status !== 'returned' && record.status !== 'transferred');
 
       signOutBody.innerHTML = '';
       if (!activeSignOuts.length) {
         signOutBody.innerHTML = '<tr><td colspan="8" class="empty">No active sign-outs.</td></tr>';
       } else {
         activeSignOuts.forEach(record => {
+          const statusInfo = getSignOutStatusInfo(record);
           signOutBody.insertAdjacentHTML('beforeend', `
             <tr>
               <td><strong>${escapeHtml(record.partName)}</strong></td>
@@ -1034,9 +1066,10 @@
               <td>${escapeHtml(record.toTeam)}</td>
               <td>${formatDate(record.signedOutAt)}</td>
               <td>${formatDate(record.dueDate)}</td>
-              <td><span class="status status-low">Out</span></td>
+              <td><span class="status ${statusInfo.className}">${statusInfo.label}</span></td>
               <td>
                 <div class="actions" style="margin:0; gap: 0.25rem; align-items: center; flex-wrap: nowrap;">
+                  <button class="secondary" type="button" data-action="transfer" data-id="${record.id}">Permanent transfer</button>
                   <button class="secondary" type="button" data-action="return" data-id="${record.id}">Mark returned</button>
                   <div class="options-wrapper">
                     <button class="secondary options-toggle" type="button" data-action="options-toggle" aria-label="More actions">⋯</button>
@@ -1057,11 +1090,11 @@
       }
 
       const outgoing = signOutRecords.filter(record =>
-        record.status !== 'returned' && record.fromTeam.toLowerCase() === myTeam.toLowerCase()
+        record.status !== 'returned' && record.status !== 'transferred' && record.fromTeam.toLowerCase() === myTeam.toLowerCase()
       );
 
       const previous = signOutRecords
-        .filter(record => record.status === 'returned' && record.fromTeam.toLowerCase() === myTeam.toLowerCase())
+        .filter(record => (record.status === 'returned' || record.status === 'transferred') && record.fromTeam.toLowerCase() === myTeam.toLowerCase())
         .sort((a, b) => new Date(b.returnedAt || b.signedOutAt).getTime() - new Date(a.returnedAt || a.signedOutAt).getTime());
 
       myTeamOutgoing.textContent = summarizeRecordsByTool(outgoing);
@@ -1085,7 +1118,7 @@
               <td>${record.quantity}</td>
               <td>${escapeHtml(record.toTeam)}</td>
               <td>${formatDate(record.signedOutAt)}</td>
-              <td>${formatDate(record.returnedAt)}</td>
+              <td>${record.status === 'transferred' ? 'Transferred' : formatDate(record.returnedAt)}</td>
               <td>${escapeHtml(record.notes || '—')}</td>
             </tr>
           `).join('');
@@ -1804,7 +1837,23 @@
           return;
         }
 
-        if (action !== 'return' || record.status === 'returned') {
+        if (action === 'transfer') {
+          if (record.status === 'returned' || record.status === 'transferred') {
+            return;
+          }
+
+          const transferredAt = new Date().toISOString();
+          const markedTransferred = await markSignOutTransferred(record.id, transferredAt);
+          if (!markedTransferred.success) {
+            alert(`Could not update sign-out status in Supabase.\n${markedTransferred.error}`);
+            return;
+          }
+
+          render();
+          return;
+        }
+
+        if (action !== 'return' || record.status === 'returned' || record.status === 'transferred') {
           return;
         }
 
