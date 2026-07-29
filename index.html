@@ -623,6 +623,10 @@
               Tool name
               <input type="text" id="transferToolName" placeholder="Example: Torque Wrench" required />
             </label>
+            <label>
+              Recipient name
+              <input type="text" id="recipientName" placeholder="Example: John Smith" />
+            </label>
             <div class="row">
               <label>
                 Quantity to sign out
@@ -659,6 +663,7 @@
                   <th>Qty</th>
                   <th>From Team</th>
                   <th>To Team</th>
+                  <th>Recipient</th>
                   <th>Signed Out</th>
                   <th>Due</th>
                   <th>Status</th>
@@ -786,6 +791,7 @@
     const fromTeamInput = document.getElementById('fromTeam');
     const toTeamInput = document.getElementById('toTeam');
     const transferToolNameInput = document.getElementById('transferToolName');
+    const recipientNameInput = document.getElementById('recipientName');
     const transferQtyInput = document.getElementById('transferQty');
     const dueDateInput = document.getElementById('dueDate');
     const transferNotesInput = document.getElementById('transferNotes');
@@ -825,6 +831,7 @@
         toTeam: row.to_team,
         signedOutAt: row.signed_out_at,
         dueDate: row.due_date,
+        recipientName: row.recipient_name,
         notes: row.notes,
         status: row.status,
         returnedAt: row.returned_at
@@ -868,6 +875,7 @@
         to_team: record.toTeam,
         signed_out_at: record.signedOutAt,
         due_date: record.dueDate,
+        recipient_name: record.recipientName,
         notes: record.notes,
         status: record.status,
         returned_at: record.returnedAt
@@ -940,6 +948,7 @@
         from_team: updates.fromTeam,
         to_team: updates.toTeam,
         due_date: updates.dueDate,
+        recipient_name: updates.recipientName,
         notes: updates.notes
       };
 
@@ -984,6 +993,7 @@
       toTeamInput.value = record.toTeam || '';
       transferQtyInput.value = Number(record.quantity) > 0 ? String(record.quantity) : '1';
       dueDateInput.value = record.dueDate || '';
+      recipientNameInput.value = record.recipientName || '';
       transferNotesInput.value = record.notes || '';
 
       if (signOutSubmitButton) {
@@ -1079,6 +1089,7 @@
               <td>${record.quantity}</td>
               <td>${escapeHtml(record.fromTeam)}</td>
               <td>${escapeHtml(record.toTeam)}</td>
+              <td>${escapeHtml(record.recipientName || '—')}</td>
               <td>${formatDateTime(record.signedOutAt)}</td>
               <td>${formatDate(record.dueDate)}</td>
               <td><span class="status ${statusInfo.className}">${statusInfo.label}</span></td>
@@ -1132,6 +1143,7 @@
               <td><strong>${escapeHtml(record.partName)}</strong></td>
               <td>${record.quantity}</td>
               <td>${escapeHtml(record.toTeam)}</td>
+              <td>${escapeHtml(record.recipientName || '—')}</td>
               <td>${formatDateTime(record.signedOutAt)}</td>
               <td>${record.status === 'transferred' ? 'Transferred' : formatDateTime(record.returnedAt)}</td>
               <td>${escapeHtml(record.notes || '—')}</td>
@@ -1750,6 +1762,7 @@
         const toTeam = toTeamInput.value.trim();
         const quantity = Number(transferQtyInput.value);
         const dueDate = dueDateInput.value || null;
+        const recipientName = recipientNameInput.value.trim();
         const notes = transferNotesInput.value.trim();
 
         if (!toolName) {
@@ -1776,6 +1789,7 @@
             fromTeam,
             toTeam,
             dueDate,
+            recipientName,
             notes
           });
 
@@ -1802,6 +1816,7 @@
             toTeam,
             signedOutAt: new Date().toISOString(),
             dueDate,
+            recipientName,
             notes,
             status: 'out',
             returnedAt: null
