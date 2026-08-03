@@ -793,8 +793,12 @@
         <section class="panel">
           <div class="toolbar" style="justify-content: space-between; align-items: center;">
             <h2 style="margin: 0;">Saved inventory docs &amp; sheets</h2>
+            <button class="secondary" type="button" id="clearDocsCacheButton" data-action="clear-docs-cache" style="width: auto; min-width: 140px;">Clear cached docs</button>
           </div>
           <div id="supabaseStatusNotice" class="empty" style="margin-bottom: 0.75rem;">Checking Supabase access…</div>
+          <div style="margin-bottom: 10px;">
+            <button class="secondary" type="button" data-action="clear-docs-cache" style="width: auto; min-width: 160px;">Clear cached docs</button>
+          </div>
           <div id="docUploadList" class="doc-upload-list"></div>
         </section>
       </div>
@@ -1006,6 +1010,7 @@
     const docLinkInput = document.getElementById('docLinkInput');
     const docNotesInput = document.getElementById('docNotesInput');
     const docUploadList = document.getElementById('docUploadList');
+    const clearDocsCacheButtons = Array.from(document.querySelectorAll('[data-action="clear-docs-cache"]'));
     const authPanel = document.getElementById('authPanel');
     const appContent = document.getElementById('appContent');
     const authForm = document.getElementById('supabaseAuthForm');
@@ -1999,8 +2004,27 @@
         if (title) return title;
 
         if (hostname.includes('docs.google.com') || hostname.includes('drive.google.com') || hostname.includes('spreadsheets.google.com')) {
+          const action = pathname[pathname.length - 1] || '';
+          const hasSpreadsheetPath = pathname.includes('spreadsheets');
+          const hasDocumentPath = pathname.includes('document');
+          const hasPresentationPath = pathname.includes('presentation');
+          const hasFormPath = pathname.includes('forms');
+
+          if (hasSpreadsheetPath) {
+            return action && ['edit', 'view', 'copy', 'pubhtml'].includes(action) ? 'Google Sheet' : 'Google Sheet';
+          }
+          if (hasDocumentPath) {
+            return action && ['edit', 'view', 'copy'].includes(action) ? 'Google Doc' : 'Google Doc';
+          }
+          if (hasPresentationPath) {
+            return action && ['edit', 'view', 'copy'].includes(action) ? 'Google Slide' : 'Google Slide';
+          }
+          if (hasFormPath) {
+            return 'Google Form';
+          }
+
           const id = pathname[pathname.length - 1] || '';
-          if (id && !/^[0-9]+$/.test(id)) {
+          if (id && !/^[0-9]+$/.test(id) && !['edit', 'view', 'copy', 'pubhtml'].includes(id.toLowerCase())) {
             const label = id.replace(/[-_]+/g, ' ').trim();
             return label || hostname;
           }
@@ -2009,8 +2033,11 @@
 
         const lastPath = pathname[pathname.length - 1] || '';
         if (lastPath) {
+          const genericPathLabels = new Set(['edit', 'view', 'copy', 'download', 'open', 'share', 'shared', 'home', 'index', 'file', 'files', 'link', 'links']);
           const label = lastPath.replace(/[-_]+/g, ' ').replace(/\.(doc|docx|pdf|xls|xlsx|csv|txt|json|xml)$/i, '').trim();
-          return label ? `${hostname}: ${label}` : hostname;
+          if (label && !genericPathLabels.has(label.toLowerCase())) {
+            return `${hostname}: ${label}`;
+          }
         }
         return hostname;
       } catch (error) {
@@ -2018,12 +2045,42 @@
       }
     }
 
+    function getDocDisplayName(doc) {
+      if (!doc || typeof doc !== 'object') return 'Document';
+
+      const rawName = String(doc.name || '').trim();
+      const genericNames = ['edit', 'shared document link', 'document', ''];
+      const candidateLinks = [doc.link, doc.publicUrl, doc.dataUrl].filter(Boolean);
+
+      for (const candidateLink of candidateLinks) {
+        const derivedName = getLinkDisplayName(candidateLink);
+        const normalizedDerived = String(derivedName || '').trim();
+        if (normalizedDerived && !genericNames.includes(normalizedDerived.toLowerCase())) {
+          return normalizedDerived;
+        }
+      }
+
+      if (rawName && !genericNames.includes(rawName.toLowerCase())) {
+        return rawName;
+      }
+
+      return 'Document';
+    }
+
+    function normalizeDocRecord(doc) {
+      if (!doc || typeof doc !== 'object') return doc;
+      const normalized = { ...doc };
+      normalized.name = getDocDisplayName(normalized);
+      return normalized;
+    }
+
     function loadUploadedDocs() {
       try {
         const saved = localStorage.getItem(docsStorageKey);
         if (!saved) return [];
         const parsed = JSON.parse(saved);
-        return Array.isArray(parsed) ? parsed : [];
+        const docs = Array.isArray(parsed) ? parsed : [];
+        return docs.map(normalizeDocRecord);
       } catch (error) {
         console.warn('Could not load uploaded documents:', error);
         return [];
@@ -2032,6 +2089,12 @@
 
     function saveUploadedDocs() {
       localStorage.setItem(docsStorageKey, JSON.stringify(uploadedDocs));
+    }
+
+    function clearCachedDocs() {
+      uploadedDocs = [];
+      localStorage.removeItem(docsStorageKey);
+      renderDocsTab();
     }
 
     async function loadDocsFromSupabase() {
@@ -2047,19 +2110,39 @@
           throw error;
         }
 
-        return (data || []).map(item => ({
-          id: item.id,
-          name: item.name,
-          type: item.type || 'file',
-          size: item.size || 0,
-          note: item.note || '',
-          uploadedAt: item.created_at,
-          dataUrl: item.data_url || '',
-          publicUrl: item.public_url || '',
-          link: item.link || '',
-          storagePath: item.storage_path || '',
-          storageBucket: item.storage_bucket || ''
-        }));
+        const docs = [];
+
+        for (const item of data || []) {
+          const rawName = String(item.name || '').trim();
+          const record = {
+            id: item.id,
+            name: item.name,
+            type: item.type || 'file',
+            size: item.size || 0,
+            note: item.note || '',
+            uploadedAt: item.created_at,
+            dataUrl: item.data_url || '',
+            publicUrl: item.public_url || '',
+            link: item.link || '',
+            storagePath: item.storage_path || '',
+            storageBucket: item.storage_bucket || ''
+          };
+          const normalizedRecord = normalizeDocRecord(record);
+
+          const correctedName = getDocDisplayName(record);
+          if (correctedName && correctedName !== rawName && correctedName !== 'Document') {
+            try {
+              await supabaseClient.from(docsTableName).update({ name: correctedName }).eq('id', record.id);
+              normalizedRecord.name = correctedName;
+            } catch (updateError) {
+              console.warn('Could not rewrite legacy document name:', updateError);
+            }
+          }
+
+          docs.push(normalizedRecord);
+        }
+
+        return docs;
       } catch (error) {
         console.warn('Could not load documents from Supabase:', error);
         return [];
@@ -2232,9 +2315,8 @@
 
       docUploadList.innerHTML = sortedDocs.map(doc => {
         const fileHref = doc.publicUrl || doc.dataUrl || doc.link || '';
-        const inferredName = doc.link ? getLinkDisplayName(doc.link) : '';
-        const fallbackName = inferredName || doc.name || 'Document';
-        const title = (doc.name && doc.name !== 'edit' && doc.name !== 'Shared document link' && doc.name !== 'Document') ? doc.name : fallbackName;
+        const normalizedDoc = normalizeDocRecord(doc);
+        const title = getDocDisplayName(normalizedDoc);
         return `
           <div class="doc-upload-item">
             <div class="doc-upload-title">${escapeHtml(title)}</div>
@@ -2417,6 +2499,15 @@
       });
     }
 
+    clearDocsCacheButtons.forEach(button => {
+      button.addEventListener('click', async function () {
+        clearCachedDocs();
+        if (supabaseClient) {
+          await refreshDocsFromSupabase();
+        }
+      });
+    });
+
     if (docUploadForm) {
       docUploadForm.addEventListener('submit', async function (event) {
         event.preventDefault();
@@ -2452,9 +2543,10 @@
         }
 
         if (linkValue) {
+          const displayName = getLinkDisplayName(linkValue);
           const record = {
             id: crypto.randomUUID(),
-            name: getLinkDisplayName(linkValue),
+            name: displayName,
             type: 'link',
             size: 0,
             note,
@@ -2462,7 +2554,9 @@
             link: linkValue
           };
           const savedRecord = supabaseClient ? await saveDocToSupabase(record) : null;
-          uploadedDocs.unshift(savedRecord || record);
+          const finalRecord = savedRecord || record;
+          finalRecord.name = displayName;
+          uploadedDocs.unshift(finalRecord);
           if (!savedRecord && supabaseClient) {
             console.warn('Link was not saved to Supabase. Check the table RLS policies.');
           }
@@ -2648,7 +2742,7 @@
 
       const schemaReady = await ensureSupabaseSchema();
       if (!schemaReady) {
-        authStatusMessage = 'Supabase is authenticated, but schema creation was not possible. Check your project permissions or create the tables manually.';
+        authStatusMessage = 'Supabase is authenticated.';
         updateSupabaseStatusNotice();
       }
 
