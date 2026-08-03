@@ -48,6 +48,36 @@
       flex-wrap: wrap;
     }
 
+    .version-banner {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.16);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #bfdbfe;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .version-banner {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.16);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #bfdbfe;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
     .title h1 { margin: 0 0 6px; font-size: 28px; text-align: center; }
     .title p { margin: 0; color: var(--muted); }
 
@@ -528,6 +558,7 @@
       <div class="title">
         <h1>VULTR Inventory Manager</h1>
       </div>
+      <div class="version-banner" id="uiVersionBanner">UI v2026.08.03-docs</div>
     </header>
 
     <div class="tabs" role="tablist" aria-label="Main sections">
@@ -817,6 +848,19 @@
   <script src="https://unpkg.com/@zxing/library@0.21.3"></script>
   <script>
     // Supabase Configuration
+    document.addEventListener('DOMContentLoaded', function () {
+      const banner = document.getElementById('uiVersionBanner');
+      if (banner) {
+        banner.textContent = 'UI v2026.08.03-docs';
+        banner.setAttribute('data-loaded-from', 'index.html');
+      }
+      const marker = document.createElement('div');
+      marker.id = 'ui-marker';
+      marker.textContent = 'ACTIVE UI VERSION: 2026.08.03-docs';
+      marker.style.cssText = 'position:fixed;top:8px;right:8px;z-index:9999;background:#ef4444;color:white;padding:8px 12px;border-radius:999px;font-size:12px;font-weight:700;';
+      document.body.appendChild(marker);
+    });
+
     function getConfigValue(name, fallback) {
       const params = new URLSearchParams(window.location.search);
       const fromQuery = params.get(name);
