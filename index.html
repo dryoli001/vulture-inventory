@@ -1793,9 +1793,21 @@
       try {
         const url = new URL(link);
         const hostname = url.hostname.replace(/^www\./, '');
-        const pathname = url.pathname.replace(/\/+$/, '').split('/').filter(Boolean).pop();
-        if (pathname) {
-          const label = pathname.replace(/[-_]+/g, ' ').replace(/\.(doc|docx|pdf|xls|xlsx|csv|txt|json|xml)$/i, '').trim();
+        const pathname = url.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+
+        if (hostname.includes('docs.google.com') || hostname.includes('drive.google.com') || hostname.includes('spreadsheets.google.com')) {
+          const id = pathname[pathname.length - 1] || '';
+          const title = url.searchParams.get('title') || '';
+          if (title) return title;
+          if (id && !/^[0-9]+$/.test(id)) {
+            const label = id.replace(/[-_]+/g, ' ').trim();
+            return label || hostname;
+          }
+        }
+
+        const lastPath = pathname[pathname.length - 1] || '';
+        if (lastPath) {
+          const label = lastPath.replace(/[-_]+/g, ' ').replace(/\.(doc|docx|pdf|xls|xlsx|csv|txt|json|xml)$/i, '').trim();
           return label ? `${hostname}: ${label}` : hostname;
         }
         return hostname;
