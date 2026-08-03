@@ -270,6 +270,47 @@
 
     .summary-item strong { display: block; margin-bottom: 5px; }
 
+    .doc-upload-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .doc-upload-item {
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .doc-upload-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    .doc-upload-meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .doc-upload-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .doc-upload-actions a,
+    .doc-upload-actions button {
+      width: auto;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     .team-grid {
       display: grid;
       grid-template-columns: 360px 1fr;
@@ -470,6 +511,7 @@
     <div class="tabs" role="tablist" aria-label="Main sections">
       <button type="button" class="tab-button active" id="inventoryTabButton" data-tab="inventory" role="tab" aria-selected="true">Spare Parts</button>
       <button type="button" class="tab-button" id="teamTabButton" data-tab="team" role="tab" aria-selected="false">Team Tool Sign-Out</button>
+      <button type="button" class="tab-button" id="docsTabButton" data-tab="docs" role="tab" aria-selected="false">Inventory Docs &amp; Sheets</button>
     </div>
 
     <section id="inventoryTabPanel" class="tab-panel active" role="tabpanel" aria-labelledby="inventoryTabButton">
@@ -706,6 +748,34 @@
       </div>
     </section>
 
+    <section id="docsTabPanel" class="tab-panel" role="tabpanel" aria-labelledby="docsTabButton">
+      <div class="grid">
+        <section class="panel">
+          <h2 style="margin-top: 0;">Upload inventory files</h2>
+          <form id="docUploadForm">
+            <label>
+              Choose spreadsheet or document files
+              <input type="file" id="docUploadInput" accept=".csv,.xls,.xlsx,.ods,.pdf,.doc,.docx,.txt,.json,.xml" multiple />
+            </label>
+            <label>
+              Note for these files
+              <input type="text" id="docNotesInput" placeholder="Optional note such as warehouse location or report month" />
+            </label>
+            <div class="actions">
+              <button class="primary" type="submit">Upload files</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="toolbar" style="justify-content: space-between; align-items: center;">
+            <h2 style="margin: 0;">Saved inventory docs &amp; sheets</h2>
+          </div>
+          <div id="docUploadList" class="doc-upload-list"></div>
+        </section>
+      </div>
+    </section>
+
   </div>
 
   <script type="module">
@@ -787,6 +857,7 @@
     const tabButtons = document.querySelectorAll('.tab-button');
     const inventoryTabPanel = document.getElementById('inventoryTabPanel');
     const teamTabPanel = document.getElementById('teamTabPanel');
+    const docsTabPanel = document.getElementById('docsTabPanel');
     const signOutForm = document.getElementById('signOutForm');
     const fromTeamInput = document.getElementById('fromTeam');
     const toTeamInput = document.getElementById('toTeam');
@@ -805,6 +876,10 @@
     const historyPanel = document.getElementById('historyPanel');
     const previousSignOutBody = document.getElementById('previousSignOutBody');
     const myTeamMeta = document.getElementById('myTeamMeta');
+    const docUploadForm = document.getElementById('docUploadForm');
+    const docUploadInput = document.getElementById('docUploadInput');
+    const docNotesInput = document.getElementById('docNotesInput');
+    const docUploadList = document.getElementById('docUploadList');
 
     let parts = [];
     let editingId = null;
@@ -818,7 +893,27 @@
     let signOutRecords = [];
     let historyPanelOpen = false;
     let editingSignOutId = null;
+    let uploadedDocs = [];
     const preferredLinearFormats = ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'];
+    const docsStorageKey = 'vultr_inventory_uploaded_docs';
+    const supabaseDocsBucket = 'inventory-docs';
+
+    function buildSignOutNotes(notes, recipientName) {
+      const parts = [];
+      if (recipientName) {
+        parts.push(`Recipient: ${recipientName}`);
+      }
+      if (notes) {
+        parts.push(notes);
+      }
+      return parts.join(' | ');
+    }
+
+    function extractRecipientNameFromNotes(notes) {
+      if (typeof notes !== 'string' || !notes) return '';
+      const match = notes.match(/Recipient:\s*(.+?)(?:\s*\|\s*|$)/i);
+      return match ? match[1].trim() : '';
+    }
 
     function mapSignOutRow(row) {
       if (!row) return null;
@@ -831,7 +926,7 @@
         toTeam: row.to_team,
         signedOutAt: row.signed_out_at,
         dueDate: row.due_date,
-        recipientName: row.recipient_name,
+        recipientName: row.recipient_name || extractRecipientNameFromNotes(row.notes),
         notes: row.notes,
         status: row.status,
         returnedAt: row.returned_at
@@ -875,8 +970,7 @@
         to_team: record.toTeam,
         signed_out_at: record.signedOutAt,
         due_date: record.dueDate,
-        recipient_name: record.recipientName,
-        notes: record.notes,
+        notes: buildSignOutNotes(record.notes, record.recipientName),
         status: record.status,
         returned_at: record.returnedAt
       };
@@ -948,8 +1042,7 @@
         from_team: updates.fromTeam,
         to_team: updates.toTeam,
         due_date: updates.dueDate,
-        recipient_name: updates.recipientName,
-        notes: updates.notes
+        notes: buildSignOutNotes(updates.notes, updates.recipientName)
       };
 
       const { data, error } = await supabaseClient
@@ -1041,7 +1134,8 @@
     function switchTab(tabName) {
       const tabPanels = {
         inventory: inventoryTabPanel,
-        team: teamTabPanel
+        team: teamTabPanel,
+        docs: docsTabPanel
       };
 
       Object.entries(tabPanels).forEach(([name, panel]) => {
@@ -1079,7 +1173,7 @@
 
       signOutBody.innerHTML = '';
       if (!activeSignOuts.length) {
-        signOutBody.innerHTML = '<tr><td colspan="8" class="empty">No active sign-outs.</td></tr>';
+        signOutBody.innerHTML = '<tr><td colspan="9" class="empty">No active sign-outs.</td></tr>';
       } else {
         activeSignOuts.forEach(record => {
           const statusInfo = getSignOutStatusInfo(record);
@@ -1136,7 +1230,7 @@
 
       if (previousSignOutBody) {
         if (!previous.length) {
-          previousSignOutBody.innerHTML = '<tr><td colspan="6" class="empty">No previous sign-outs for this team yet.</td></tr>';
+          previousSignOutBody.innerHTML = '<tr><td colspan="7" class="empty">No previous sign-outs for this team yet.</td></tr>';
         } else {
           previousSignOutBody.innerHTML = previous.map(record => `
             <tr>
@@ -1667,6 +1761,7 @@
       document.getElementById('lowStockCount').textContent = lowStockCount;
       document.getElementById('reorderCount').textContent = lowStockCount;
       renderTeamTab();
+      renderDocsTab();
     }
 
     function escapeHtml(text) {
@@ -1676,6 +1771,119 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function formatFileSize(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+      const value = bytes / (1024 ** exponent);
+      return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+    }
+
+    function loadUploadedDocs() {
+      try {
+        const saved = localStorage.getItem(docsStorageKey);
+        if (!saved) return [];
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.warn('Could not load uploaded documents:', error);
+        return [];
+      }
+    }
+
+    function saveUploadedDocs() {
+      localStorage.setItem(docsStorageKey, JSON.stringify(uploadedDocs));
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function uploadDocumentToSupabase(file, note, dataUrl) {
+      if (!supabaseClient || !supabaseClient.storage) {
+        return null;
+      }
+
+      const safeName = String(file.name || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `${Date.now()}-${safeName}`;
+
+      try {
+        const { data, error } = await supabaseClient.storage
+          .from(supabaseDocsBucket)
+          .upload(storagePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type || 'application/octet-stream'
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        const uploadedPath = data?.path || storagePath;
+        const publicUrlResult = supabaseClient.storage.from(supabaseDocsBucket).getPublicUrl(uploadedPath);
+
+        return {
+          id: crypto.randomUUID(),
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          note,
+          uploadedAt: new Date().toISOString(),
+          storagePath: uploadedPath,
+          storageBucket: supabaseDocsBucket,
+          publicUrl: publicUrlResult?.data?.publicUrl || '',
+          dataUrl: dataUrl || ''
+        };
+      } catch (error) {
+        console.warn('Could not upload file to Supabase Storage:', error);
+        return null;
+      }
+    }
+
+    async function removeDocumentFromSupabase(doc) {
+      if (!supabaseClient || !supabaseClient.storage || !doc?.storagePath) {
+        return;
+      }
+
+      try {
+        await supabaseClient.storage.from(supabaseDocsBucket).remove([doc.storagePath]);
+      } catch (error) {
+        console.warn('Could not remove stored document from Supabase:', error);
+      }
+    }
+
+    function renderDocsTab() {
+      if (!docUploadList) return;
+      const sortedDocs = uploadedDocs.slice().sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+
+      if (!sortedDocs.length) {
+        docUploadList.innerHTML = '<div class="empty">No files uploaded yet. Add spreadsheets, forms, or other inventory documents here.</div>';
+        return;
+      }
+
+      docUploadList.innerHTML = sortedDocs.map(doc => {
+        const fileHref = doc.publicUrl || doc.dataUrl || '';
+        const storageLabel = doc.storagePath ? 'Stored in Supabase' : 'Stored locally';
+        return `
+          <div class="doc-upload-item">
+            <div class="doc-upload-title">${escapeHtml(doc.name)}</div>
+            <div class="doc-upload-meta">${escapeHtml(doc.note || 'No note added')}</div>
+            <div class="doc-upload-meta">Type: ${escapeHtml(doc.type || 'file')} • Size: ${escapeHtml(formatFileSize(doc.size || 0))} • ${escapeHtml(storageLabel)} • Uploaded: ${escapeHtml(new Date(doc.uploadedAt).toLocaleString())}</div>
+            <div class="doc-upload-actions">
+              ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(doc.name)}">Open / Download</a>` : ''}
+              <button class="danger" type="button" data-action="remove-doc" data-id="${doc.id}">Remove</button>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     function resetForm() {
@@ -1839,6 +2047,56 @@
       });
     }
 
+    if (docUploadForm) {
+      docUploadForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const files = Array.from(docUploadInput?.files || []);
+        if (!files.length) {
+          alert('Please choose at least one spreadsheet or document to upload.');
+          return;
+        }
+
+        const note = docNotesInput?.value.trim() || '';
+
+        for (const file of files) {
+          try {
+            const dataUrl = await readFileAsDataUrl(file);
+            const uploadedRecord = await uploadDocumentToSupabase(file, note, dataUrl);
+            uploadedDocs.unshift(uploadedRecord || {
+              id: crypto.randomUUID(),
+              name: file.name,
+              type: file.type || 'application/octet-stream',
+              size: file.size,
+              note,
+              uploadedAt: new Date().toISOString(),
+              dataUrl
+            });
+          } catch (error) {
+            console.warn('Could not read uploaded file:', error);
+          }
+        }
+
+        saveUploadedDocs();
+        docUploadForm.reset();
+        renderDocsTab();
+      });
+    }
+
+    if (docUploadList) {
+      docUploadList.addEventListener('click', async function (event) {
+        const button = event.target.closest('button[data-action="remove-doc"]');
+        if (!button) return;
+        const id = button.dataset.id;
+        const docToRemove = uploadedDocs.find(item => item.id === id);
+        if (docToRemove) {
+          await removeDocumentFromSupabase(docToRemove);
+        }
+        uploadedDocs = uploadedDocs.filter(item => item.id !== id);
+        saveUploadedDocs();
+        renderDocsTab();
+      });
+    }
+
     if (signOutBody) {
       signOutBody.addEventListener('click', async function (event) {
         const button = event.target.closest('button[data-action]');
@@ -1976,6 +2234,7 @@
       await waitForSupabase();
       parts = await loadParts();
       signOutRecords = await loadSignOutRecords();
+      uploadedDocs = loadUploadedDocs();
       if (myTeamFilterInput && !myTeamFilterInput.value.trim() && fromTeamInput) {
         myTeamFilterInput.value = fromTeamInput.value.trim() || 'VULTR';
       }
