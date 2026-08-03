@@ -502,6 +502,25 @@
 </head>
 <body>
   <div class="app">
+    <div id="authPanel" class="panel" style="margin-bottom: 18px;">
+      <h2 style="margin-top: 0;">Connect to Supabase</h2>
+      <p id="authStatusText" style="margin-top: 0; color: var(--muted);">Sign in with a real Supabase auth user to sync parts, tools, and documents.</p>
+      <form id="supabaseAuthForm">
+        <label>
+          Email
+          <input type="email" id="supabaseEmailInput" placeholder="you@example.com" required />
+        </label>
+        <label>
+          Password
+          <input type="password" id="supabasePasswordInput" placeholder="Your Supabase password" required />
+        </label>
+        <div class="actions">
+          <button class="primary" type="submit">Sign in to Supabase</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="appContent" hidden>
     <header>
       <div class="title">
         <h1>VULTR Inventory Manager</h1>
@@ -802,8 +821,8 @@
 
     const SUPABASE_URL = getConfigValue('supabaseUrl', 'https://khepitixnrezlnyablfd.supabase.co');
     const SUPABASE_ANON_KEY = getConfigValue('supabaseAnonKey', 'sb_publishable_ITVKCtxEo826CuvP3WPg6g_BgD99vSB');
-    const SUPABASE_AUTH_EMAIL = getConfigValue('supabaseEmail', 'inventory@local.test');
-    const SUPABASE_AUTH_PASSWORD = getConfigValue('supabasePassword', 'VultrInventory2026!');
+    const SUPABASE_AUTH_EMAIL = getConfigValue('supabaseEmail', '');
+    const SUPABASE_AUTH_PASSWORD = getConfigValue('supabasePassword', '');
     
     // Initialize Supabase when library is ready
     function getSupabase() {
@@ -858,47 +877,84 @@
       return supabaseReady;
     }
 
-    async function ensureSupabaseSession() {
+    async function ensureSupabaseSession(email = SUPABASE_AUTH_EMAIL, password = SUPABASE_AUTH_PASSWORD) {
       if (!supabaseClient) {
-        authStatusMessage = 'Supabase client is unavailable. The page will use local data until it is reachable.';
+        authStatusMessage = 'Supabase client is unavailable. Check your internet connection and project URL.';
         updateSupabaseStatusNotice();
+        setAuthUiVisible(true, authStatusMessage);
         return false;
       }
       if (supabaseAuthReady) {
         authStatusMessage = 'Supabase session ready.';
         updateSupabaseStatusNotice();
+        setAuthUiVisible(false, authStatusMessage);
         return true;
       }
 
-      if (!SUPABASE_AUTH_EMAIL || !SUPABASE_AUTH_PASSWORD || SUPABASE_AUTH_EMAIL.includes('example') || SUPABASE_AUTH_PASSWORD.includes('change-me')) {
-        authStatusMessage = 'Supabase auth is not configured yet. Create a real auth user and add the email/password values to the page config.';
+      if (!email || !password || email.includes('example') || password.includes('change-me')) {
+        authStatusMessage = 'Enter a real Supabase email and password to connect.';
         updateSupabaseStatusNotice();
+        setAuthUiVisible(true, authStatusMessage);
         return false;
       }
 
       try {
         const { data, error } = await supabaseClient.auth.signInWithPassword({
-          email: SUPABASE_AUTH_EMAIL,
-          password: SUPABASE_AUTH_PASSWORD
+          email,
+          password
         });
 
         if (error) {
           console.warn('Supabase sign-in failed:', error);
-          authStatusMessage = `Supabase auth failed: ${error.message || 'unknown error'}. Create the auth user first, then add the matching email and password.`;
+          authStatusMessage = `Supabase auth failed: ${error.message || 'unknown error'}.`;
           updateSupabaseStatusNotice();
+          setAuthUiVisible(true, authStatusMessage);
           return false;
         }
 
         supabaseAuthReady = !!data?.session;
         authStatusMessage = supabaseAuthReady ? 'Supabase session ready.' : 'Supabase session is not active.';
         updateSupabaseStatusNotice();
+        setAuthUiVisible(!supabaseAuthReady, authStatusMessage);
         return supabaseAuthReady;
       } catch (error) {
         console.warn('Supabase auth setup failed:', error);
         authStatusMessage = 'Supabase auth setup failed. Check the project URL, anon key, and auth user configuration.';
         updateSupabaseStatusNotice();
+        setAuthUiVisible(true, authStatusMessage);
         return false;
       }
+    }
+
+    async function initializeSupabaseAuth() {
+      if (!supabaseClient) {
+        setAuthUiVisible(true, 'Supabase is unavailable right now.');
+        return false;
+      }
+
+      try {
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
+        if (error) {
+          throw error;
+        }
+
+        if (session?.access_token) {
+          supabaseAuthReady = true;
+          authStatusMessage = 'Supabase session ready.';
+          updateSupabaseStatusNotice();
+          setAuthUiVisible(false, authStatusMessage);
+          return true;
+        }
+      } catch (error) {
+        console.warn('Could not read existing Supabase session:', error);
+      }
+
+      if (SUPABASE_AUTH_EMAIL && SUPABASE_AUTH_PASSWORD) {
+        return ensureSupabaseSession(SUPABASE_AUTH_EMAIL, SUPABASE_AUTH_PASSWORD);
+      }
+
+      setAuthUiVisible(true, 'Enter your Supabase email and password to continue.');
+      return false;
     }
     const partForm = document.getElementById('partForm');
     const inventoryBody = document.getElementById('inventoryBody');
@@ -950,6 +1006,12 @@
     const docLinkInput = document.getElementById('docLinkInput');
     const docNotesInput = document.getElementById('docNotesInput');
     const docUploadList = document.getElementById('docUploadList');
+    const authPanel = document.getElementById('authPanel');
+    const appContent = document.getElementById('appContent');
+    const authForm = document.getElementById('supabaseAuthForm');
+    const authEmailInput = document.getElementById('supabaseEmailInput');
+    const authPasswordInput = document.getElementById('supabasePasswordInput');
+    const authStatusText = document.getElementById('authStatusText');
 
     let parts = [];
     let editingId = null;
@@ -963,6 +1025,18 @@
     let signOutRecords = [];
     let historyPanelOpen = false;
     let editingSignOutId = null;
+
+    function setAuthUiVisible(visible, message = '') {
+      if (authPanel) {
+        authPanel.hidden = !visible;
+      }
+      if (appContent) {
+        appContent.hidden = !(!visible);
+      }
+      if (authStatusText) {
+        authStatusText.textContent = message || 'Sign in with a real Supabase auth user to sync parts, tools, and documents.';
+      }
+    }
     let uploadedDocs = [];
     let docsSubscription = null;
     const preferredLinearFormats = ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'];
@@ -2250,6 +2324,15 @@
       });
     }
 
+    if (authForm) {
+      authForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const email = authEmailInput?.value.trim() || '';
+        const password = authPasswordInput?.value.trim() || '';
+        await ensureSupabaseSession(email, password);
+      });
+    }
+
     if (docUploadForm) {
       docUploadForm.addEventListener('submit', async function (event) {
         event.preventDefault();
@@ -2460,8 +2543,24 @@
     // Initialize the app
     (async () => {
       await waitForSupabase();
-      await ensureSupabaseSession();
+      if (authEmailInput && !authEmailInput.value) {
+        authEmailInput.value = SUPABASE_AUTH_EMAIL || '';
+      }
+      if (authPasswordInput && !authPasswordInput.value) {
+        authPasswordInput.value = SUPABASE_AUTH_PASSWORD || '';
+      }
+
+      const authReady = await initializeSupabaseAuth();
       updateSupabaseStatusNotice();
+
+      if (!authReady) {
+        parts = [];
+        signOutRecords = [];
+        uploadedDocs = loadUploadedDocs();
+        render();
+        return;
+      }
+
       parts = await loadParts();
       signOutRecords = await loadSignOutRecords();
       uploadedDocs = loadUploadedDocs();
