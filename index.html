@@ -1043,6 +1043,12 @@
     const docsStorageKey = 'vultr_inventory_uploaded_docs';
     const supabaseDocsBucket = 'inventory-docs';
     const docsTableName = 'inventory_documents';
+    const ignoredSamplePartNames = ['Bearing 6204', 'Hydraulic Seal Kit', 'Motor Relay 24V'];
+
+    function isIgnoredSamplePart(part) {
+      const name = String(part?.name || '').trim();
+      return ignoredSamplePartNames.includes(name);
+    }
 
     function buildSignOutNotes(notes, recipientName) {
       const parts = [];
@@ -1397,6 +1403,68 @@
         : `Click to view previous sign-outs for ${myTeam}.`;
     }
 
+    async function ensureSupabaseSchema() {
+      if (!supabaseClient) return false;
+
+      try {
+        const createTablesSql = `
+          create table if not exists public.inventory_parts (
+            id uuid primary key default gen_random_uuid(),
+            name text not null,
+            barcode text default '',
+            quantity int default 0,
+            minstock int default 1,
+            image text default '',
+            created_at timestamptz default now()
+          );
+
+          create table if not exists public.tool_signouts (
+            id uuid primary key default gen_random_uuid(),
+            part_id uuid,
+            part_name text not null,
+            quantity int default 1,
+            from_team text not null,
+            to_team text not null,
+            signed_out_at timestamptz default now(),
+            due_date date,
+            recipient_name text default '',
+            notes text default '',
+            status text default 'out',
+            returned_at timestamptz
+          );
+
+          create table if not exists public.inventory_documents (
+            id uuid primary key default gen_random_uuid(),
+            name text not null,
+            type text default 'file',
+            size bigint default 0,
+            note text default '',
+            created_at timestamptz default now(),
+            data_url text default '',
+            public_url text default '',
+            link text default '',
+            storage_path text default '',
+            storage_bucket text default ''
+          );
+
+          alter table public.inventory_parts enable row level security;
+          alter table public.tool_signouts enable row level security;
+          alter table public.inventory_documents enable row level security;
+        `;
+
+        const { error } = await supabaseClient.rpc('exec_sql', { sql: createTablesSql });
+        if (error) {
+          console.warn('Auto schema creation via RPC failed:', error);
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        console.warn('Could not ensure Supabase schema:', error);
+        return false;
+      }
+    }
+
     async function loadParts() {
       try {
         // Wait for supabaseClient to be available
@@ -1417,19 +1485,34 @@
           .order('created_at', { ascending: false });
         
         if (error) {
+          const detail = error?.message || 'unknown error';
+          const explanation = error?.code === '42P01'
+            ? 'The inventory_parts table does not exist yet.'
+            : /row-level security|permission denied|42501/i.test(detail)
+              ? 'RLS is blocking the read. Allow authenticated users to select rows from inventory_parts.'
+              : 'Check your table name and column names.';
+          authStatusMessage = `Supabase read failed: ${detail}. ${explanation}`;
+          updateSupabaseStatusNotice();
           console.warn('Could not load inventory from Supabase:', error);
           return [];
         }
         
         if (data && data.length > 0) {
-          return data.map(part => ({
-            ...part,
-            minStock: part.minstock
-          }));
+          return data
+            .filter(part => !isIgnoredSamplePart(part))
+            .map(part => ({
+              ...part,
+              minStock: part.minstock
+            }));
         }
 
+        authStatusMessage = 'Signed in successfully, but inventory_parts is empty right now. Add a part to create the first row.';
+        updateSupabaseStatusNotice();
         return [];
       } catch (error) {
+        const detail = error?.message || 'unknown error';
+        authStatusMessage = `Supabase load error: ${detail}`;
+        updateSupabaseStatusNotice();
         console.warn('Error loading parts:', error);
         return [];
       }
@@ -1911,15 +1994,17 @@
         const url = new URL(link);
         const hostname = url.hostname.replace(/^www\./, '');
         const pathname = url.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+        const title = url.searchParams.get('title') || '';
+
+        if (title) return title;
 
         if (hostname.includes('docs.google.com') || hostname.includes('drive.google.com') || hostname.includes('spreadsheets.google.com')) {
           const id = pathname[pathname.length - 1] || '';
-          const title = url.searchParams.get('title') || '';
-          if (title) return title;
           if (id && !/^[0-9]+$/.test(id)) {
             const label = id.replace(/[-_]+/g, ' ').trim();
             return label || hostname;
           }
+          return hostname;
         }
 
         const lastPath = pathname[pathname.length - 1] || '';
@@ -2147,15 +2232,14 @@
 
       docUploadList.innerHTML = sortedDocs.map(doc => {
         const fileHref = doc.publicUrl || doc.dataUrl || doc.link || '';
-        const storageLabel = doc.storagePath ? 'Stored in Supabase' : doc.link ? 'External link' : 'Stored locally';
-        const sizeText = doc.size ? `• Size: ${escapeHtml(formatFileSize(doc.size || 0))}` : '';
+        const inferredName = doc.link ? getLinkDisplayName(doc.link) : '';
+        const fallbackName = inferredName || doc.name || 'Document';
+        const title = (doc.name && doc.name !== 'edit' && doc.name !== 'Shared document link' && doc.name !== 'Document') ? doc.name : fallbackName;
         return `
           <div class="doc-upload-item">
-            <div class="doc-upload-title">${escapeHtml(doc.name)}</div>
-            <div class="doc-upload-meta">${escapeHtml(doc.note || 'No note added')}</div>
-            <div class="doc-upload-meta">Type: ${escapeHtml(doc.type || (doc.link ? 'link' : 'file'))} ${sizeText ? sizeText : ''} • ${escapeHtml(storageLabel)} • Uploaded: ${escapeHtml(new Date(doc.uploadedAt).toLocaleString())}</div>
+            <div class="doc-upload-title">${escapeHtml(title)}</div>
             <div class="doc-upload-actions">
-              ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(doc.name)}">Open / Open link</a>` : ''}
+              ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(title)}">Open</a>` : ''}
               <button class="danger" type="button" data-action="remove-doc" data-id="${doc.id}">Remove</button>
             </div>
           </div>
@@ -2542,6 +2626,7 @@
 
     // Initialize the app
     (async () => {
+      setAuthUiVisible(true, 'Connecting to Supabase…');
       await waitForSupabase();
       if (authEmailInput && !authEmailInput.value) {
         authEmailInput.value = SUPABASE_AUTH_EMAIL || '';
@@ -2559,6 +2644,12 @@
         uploadedDocs = loadUploadedDocs();
         render();
         return;
+      }
+
+      const schemaReady = await ensureSupabaseSchema();
+      if (!schemaReady) {
+        authStatusMessage = 'Supabase is authenticated, but schema creation was not possible. Check your project permissions or create the tables manually.';
+        updateSupabaseStatusNotice();
       }
 
       parts = await loadParts();
