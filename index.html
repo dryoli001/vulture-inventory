@@ -781,6 +781,10 @@
               <input type="url" id="docLinkInput" placeholder="https://docs.google.com/...." />
             </label>
             <label>
+              Display name for this link (optional)
+              <input type="text" id="docNameInput" placeholder="Leave blank to use the document title" />
+            </label>
+            <label>
               Note for these files or links
               <input type="text" id="docNotesInput" placeholder="Optional note such as warehouse location or report month" />
             </label>
@@ -1008,6 +1012,7 @@
     const docUploadForm = document.getElementById('docUploadForm');
     const docUploadInput = document.getElementById('docUploadInput');
     const docLinkInput = document.getElementById('docLinkInput');
+    const docNameInput = document.getElementById('docNameInput');
     const docNotesInput = document.getElementById('docNotesInput');
     const docUploadList = document.getElementById('docUploadList');
     const clearDocsCacheButtons = Array.from(document.querySelectorAll('[data-action="clear-docs-cache"]'));
@@ -2004,20 +2009,30 @@
         if (title) return title;
 
         if (hostname.includes('docs.google.com') || hostname.includes('drive.google.com') || hostname.includes('spreadsheets.google.com')) {
+          const rawTitle = url.searchParams.get('title') || url.searchParams.get('name') || '';
+          if (rawTitle) return rawTitle;
+
           const action = pathname[pathname.length - 1] || '';
           const hasSpreadsheetPath = pathname.includes('spreadsheets');
           const hasDocumentPath = pathname.includes('document');
           const hasPresentationPath = pathname.includes('presentation');
           const hasFormPath = pathname.includes('forms');
 
+          const pathSegments = pathname.filter(segment => segment && !['edit', 'view', 'copy', 'pubhtml', 'd', 'u', 'e'].includes(segment.toLowerCase()));
+          const meaningfulPath = pathSegments[pathSegments.length - 1] || '';
+          if (meaningfulPath && !/^[a-z0-9]{10,}$/i.test(meaningfulPath)) {
+            const label = meaningfulPath.replace(/[-_]+/g, ' ').trim();
+            if (label) return label;
+          }
+
           if (hasSpreadsheetPath) {
-            return action && ['edit', 'view', 'copy', 'pubhtml'].includes(action) ? 'Google Sheet' : 'Google Sheet';
+            return 'Google Sheet';
           }
           if (hasDocumentPath) {
-            return action && ['edit', 'view', 'copy'].includes(action) ? 'Google Doc' : 'Google Doc';
+            return 'Google Doc';
           }
           if (hasPresentationPath) {
-            return action && ['edit', 'view', 'copy'].includes(action) ? 'Google Slide' : 'Google Slide';
+            return 'Google Slide';
           }
           if (hasFormPath) {
             return 'Google Form';
@@ -2317,9 +2332,11 @@
         const fileHref = doc.publicUrl || doc.dataUrl || doc.link || '';
         const normalizedDoc = normalizeDocRecord(doc);
         const title = getDocDisplayName(normalizedDoc);
+        const note = doc.note ? escapeHtml(doc.note) : '';
         return `
           <div class="doc-upload-item">
             <div class="doc-upload-title">${escapeHtml(title)}</div>
+            ${note ? `<div class="doc-upload-meta">${note}</div>` : ''}
             <div class="doc-upload-actions">
               ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(title)}">Open</a>` : ''}
               <button class="danger" type="button" data-action="remove-doc" data-id="${doc.id}">Remove</button>
@@ -2513,6 +2530,7 @@
         event.preventDefault();
         const files = Array.from(docUploadInput?.files || []);
         const note = docNotesInput?.value.trim() || '';
+        const customName = docNameInput?.value.trim() || '';
         const linkValue = docLinkInput?.value.trim() || '';
 
         if (!files.length && !linkValue) {
@@ -2543,7 +2561,7 @@
         }
 
         if (linkValue) {
-          const displayName = getLinkDisplayName(linkValue);
+          const displayName = customName || getLinkDisplayName(linkValue);
           const record = {
             id: crypto.randomUUID(),
             name: displayName,
@@ -2564,6 +2582,7 @@
 
         saveUploadedDocs();
         docUploadForm.reset();
+        if (docNameInput) docNameInput.value = '';
         renderDocsTab();
       });
     }
