@@ -2182,13 +2182,13 @@
       docUploadForm.addEventListener('submit', async function (event) {
         event.preventDefault();
         const files = Array.from(docUploadInput?.files || []);
-        if (!files.length) {
-          alert('Please choose at least one spreadsheet or document to upload.');
-          return;
-        }
-
         const note = docNotesInput?.value.trim() || '';
         const linkValue = docLinkInput?.value.trim() || '';
+
+        if (!files.length && !linkValue) {
+          alert('Please choose a file or paste a link.');
+          return;
+        }
 
         for (const file of files) {
           try {
