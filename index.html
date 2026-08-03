@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <link rel="icon" href="favicon.ico" type="image/x-icon" />
   <link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
   <title>VULTR Inventory Manager</title>
@@ -780,8 +783,8 @@
               Or paste a link to a Google Doc, Google Sheet, or other shared document
               <input type="url" id="docLinkInput" placeholder="https://docs.google.com/...." />
             </label>
-            <label>
-              Display name for this link (optional)
+            <label style="border: 1px solid rgba(255,255,255,0.12); padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.03);">
+              <div style="margin-bottom: 6px; font-weight: 600;">Display name for this link (optional)</div>
               <input type="text" id="docNameInput" placeholder="Leave blank to use the document title" />
             </label>
             <label>
@@ -797,12 +800,8 @@
         <section class="panel">
           <div class="toolbar" style="justify-content: space-between; align-items: center;">
             <h2 style="margin: 0;">Saved inventory docs &amp; sheets</h2>
-            <button class="secondary" type="button" id="clearDocsCacheButton" data-action="clear-docs-cache" style="width: auto; min-width: 140px;">Clear cached docs</button>
           </div>
           <div id="supabaseStatusNotice" class="empty" style="margin-bottom: 0.75rem;">Checking Supabase access…</div>
-          <div style="margin-bottom: 10px;">
-            <button class="secondary" type="button" data-action="clear-docs-cache" style="width: auto; min-width: 160px;">Clear cached docs</button>
-          </div>
           <div id="docUploadList" class="doc-upload-list"></div>
         </section>
       </div>
@@ -1015,7 +1014,6 @@
     const docNameInput = document.getElementById('docNameInput');
     const docNotesInput = document.getElementById('docNotesInput');
     const docUploadList = document.getElementById('docUploadList');
-    const clearDocsCacheButtons = Array.from(document.querySelectorAll('[data-action="clear-docs-cache"]'));
     const authPanel = document.getElementById('authPanel');
     const appContent = document.getElementById('appContent');
     const authForm = document.getElementById('supabaseAuthForm');
@@ -2106,12 +2104,6 @@
       localStorage.setItem(docsStorageKey, JSON.stringify(uploadedDocs));
     }
 
-    function clearCachedDocs() {
-      uploadedDocs = [];
-      localStorage.removeItem(docsStorageKey);
-      renderDocsTab();
-    }
-
     async function loadDocsFromSupabase() {
       if (!supabaseClient) return [];
 
@@ -2331,14 +2323,15 @@
       docUploadList.innerHTML = sortedDocs.map(doc => {
         const fileHref = doc.publicUrl || doc.dataUrl || doc.link || '';
         const normalizedDoc = normalizeDocRecord(doc);
-        const title = getDocDisplayName(normalizedDoc);
+        const title = String(normalizedDoc.name || getDocDisplayName(normalizedDoc) || 'Document').trim();
         const note = doc.note ? escapeHtml(doc.note) : '';
+        const safeTitle = title && title !== 'Document' ? title : 'Document';
         return `
           <div class="doc-upload-item">
-            <div class="doc-upload-title">${escapeHtml(title)}</div>
+            <div class="doc-upload-title">${escapeHtml(safeTitle)}</div>
             ${note ? `<div class="doc-upload-meta">${note}</div>` : ''}
             <div class="doc-upload-actions">
-              ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(title)}">Open</a>` : ''}
+              ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(safeTitle)}">Open</a>` : ''}
               <button class="danger" type="button" data-action="remove-doc" data-id="${doc.id}">Remove</button>
             </div>
           </div>
@@ -2516,15 +2509,6 @@
       });
     }
 
-    clearDocsCacheButtons.forEach(button => {
-      button.addEventListener('click', async function () {
-        clearCachedDocs();
-        if (supabaseClient) {
-          await refreshDocsFromSupabase();
-        }
-      });
-    });
-
     if (docUploadForm) {
       docUploadForm.addEventListener('submit', async function (event) {
         event.preventDefault();
@@ -2583,6 +2567,8 @@
         saveUploadedDocs();
         docUploadForm.reset();
         if (docNameInput) docNameInput.value = '';
+        if (docNotesInput) docNotesInput.value = '';
+        if (docLinkInput) docLinkInput.value = '';
         renderDocsTab();
       });
     }
