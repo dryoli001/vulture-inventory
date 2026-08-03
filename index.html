@@ -899,9 +899,11 @@
     let historyPanelOpen = false;
     let editingSignOutId = null;
     let uploadedDocs = [];
+    let docsSubscription = null;
     const preferredLinearFormats = ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'];
     const docsStorageKey = 'vultr_inventory_uploaded_docs';
     const supabaseDocsBucket = 'inventory-docs';
+    const docsTableName = 'inventory_documents';
 
     function buildSignOutNotes(notes, recipientName) {
       const parts = [];
@@ -1818,6 +1820,113 @@
       localStorage.setItem(docsStorageKey, JSON.stringify(uploadedDocs));
     }
 
+    async function loadDocsFromSupabase() {
+      if (!supabaseClient) return [];
+
+      try {
+        const { data, error } = await supabaseClient
+          .from(docsTableName)
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        return (data || []).map(item => ({
+          id: item.id,
+          name: item.name,
+          type: item.type || 'file',
+          size: item.size || 0,
+          note: item.note || '',
+          uploadedAt: item.created_at,
+          dataUrl: item.data_url || '',
+          publicUrl: item.public_url || '',
+          link: item.link || '',
+          storagePath: item.storage_path || '',
+          storageBucket: item.storage_bucket || ''
+        }));
+      } catch (error) {
+        console.warn('Could not load documents from Supabase:', error);
+        return [];
+      }
+    }
+
+    async function saveDocToSupabase(record) {
+      if (!supabaseClient) return null;
+
+      try {
+        const payload = {
+          id: record.id,
+          name: record.name,
+          type: record.type || 'file',
+          size: record.size || 0,
+          note: record.note || '',
+          created_at: record.uploadedAt,
+          data_url: record.dataUrl || '',
+          public_url: record.publicUrl || '',
+          link: record.link || '',
+          storage_path: record.storagePath || '',
+          storage_bucket: record.storageBucket || ''
+        };
+
+        const { data, error } = await supabaseClient
+          .from(docsTableName)
+          .insert(payload)
+          .select()
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        return data ? {
+          id: data.id,
+          name: data.name,
+          type: data.type || 'file',
+          size: data.size || 0,
+          note: data.note || '',
+          uploadedAt: data.created_at,
+          dataUrl: data.data_url || '',
+          publicUrl: data.public_url || '',
+          link: data.link || '',
+          storagePath: data.storage_path || '',
+          storageBucket: data.storage_bucket || ''
+        } : null;
+      } catch (error) {
+        console.warn('Could not save document to Supabase:', error);
+        return null;
+      }
+    }
+
+    async function removeDocFromSupabase(docId) {
+      if (!supabaseClient) return;
+
+      try {
+        await supabaseClient.from(docsTableName).delete().eq('id', docId);
+      } catch (error) {
+        console.warn('Could not remove document from Supabase:', error);
+      }
+    }
+
+    function subscribeToDocs() {
+      if (!supabaseClient || docsSubscription) return;
+
+      docsSubscription = supabaseClient
+        .channel('inventory-docs-live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: docsTableName }, () => {
+          refreshDocsFromSupabase();
+        })
+        .subscribe();
+    }
+
+    async function refreshDocsFromSupabase() {
+      const docs = await loadDocsFromSupabase();
+      uploadedDocs = docs;
+      saveUploadedDocs();
+      renderDocsTab();
+    }
+
     function readFileAsDataUrl(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -2085,22 +2194,26 @@
           try {
             const dataUrl = await readFileAsDataUrl(file);
             const uploadedRecord = await uploadDocumentToSupabase(file, note, dataUrl);
-            uploadedDocs.unshift(uploadedRecord || {
-              id: crypto.randomUUID(),
-              name: file.name,
-              type: file.type || 'application/octet-stream',
-              size: file.size,
-              note,
-              uploadedAt: new Date().toISOString(),
-              dataUrl
-            });
+            if (uploadedRecord) {
+              uploadedDocs.unshift(uploadedRecord);
+            } else {
+              uploadedDocs.unshift({
+                id: crypto.randomUUID(),
+                name: file.name,
+                type: file.type || 'application/octet-stream',
+                size: file.size,
+                note,
+                uploadedAt: new Date().toISOString(),
+                dataUrl
+              });
+            }
           } catch (error) {
             console.warn('Could not read uploaded file:', error);
           }
         }
 
         if (linkValue) {
-          uploadedDocs.unshift({
+          const record = {
             id: crypto.randomUUID(),
             name: getLinkDisplayName(linkValue),
             type: 'link',
@@ -2108,7 +2221,9 @@
             note,
             uploadedAt: new Date().toISOString(),
             link: linkValue
-          });
+          };
+          const savedRecord = supabaseClient ? await saveDocToSupabase(record) : null;
+          uploadedDocs.unshift(savedRecord || record);
         }
 
         saveUploadedDocs();
@@ -2125,6 +2240,9 @@
         const docToRemove = uploadedDocs.find(item => item.id === id);
         if (docToRemove) {
           await removeDocumentFromSupabase(docToRemove);
+          if (supabaseClient) {
+            await removeDocFromSupabase(docToRemove.id);
+          }
         }
         uploadedDocs = uploadedDocs.filter(item => item.id !== id);
         saveUploadedDocs();
@@ -2270,6 +2388,11 @@
       parts = await loadParts();
       signOutRecords = await loadSignOutRecords();
       uploadedDocs = loadUploadedDocs();
+      if (supabaseClient) {
+        uploadedDocs = await loadDocsFromSupabase();
+        saveUploadedDocs();
+        subscribeToDocs();
+      }
       if (myTeamFilterInput && !myTeamFilterInput.value.trim() && fromTeamInput) {
         myTeamFilterInput.value = fromTeamInput.value.trim() || 'VULTR';
       }
