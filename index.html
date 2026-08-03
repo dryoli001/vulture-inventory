@@ -775,6 +775,7 @@
           <div class="toolbar" style="justify-content: space-between; align-items: center;">
             <h2 style="margin: 0;">Saved inventory docs &amp; sheets</h2>
           </div>
+          <div id="supabaseStatusNotice" class="empty" style="margin-bottom: 0.75rem;">Checking Supabase access…</div>
           <div id="docUploadList" class="doc-upload-list"></div>
         </section>
       </div>
@@ -790,8 +791,19 @@
   <script src="https://unpkg.com/@zxing/library@0.21.3"></script>
   <script>
     // Supabase Configuration
-    const SUPABASE_URL = 'https://khepitixnrezlnyablfd.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_ITVKCtxEo826CuvP3WPg6g_BgD99vSB';
+    function getConfigValue(name, fallback) {
+      const params = new URLSearchParams(window.location.search);
+      const fromQuery = params.get(name);
+      if (fromQuery) return fromQuery;
+      const fromWindow = window?.__SUPABASE_CONFIG__?.[name];
+      if (fromWindow) return fromWindow;
+      return fallback;
+    }
+
+    const SUPABASE_URL = getConfigValue('supabaseUrl', 'https://khepitixnrezlnyablfd.supabase.co');
+    const SUPABASE_ANON_KEY = getConfigValue('supabaseAnonKey', 'sb_publishable_ITVKCtxEo826CuvP3WPg6g_BgD99vSB');
+    const SUPABASE_AUTH_EMAIL = getConfigValue('supabaseEmail', 'inventory@local.test');
+    const SUPABASE_AUTH_PASSWORD = getConfigValue('supabasePassword', 'VultrInventory2026!');
     
     // Initialize Supabase when library is ready
     function getSupabase() {
@@ -803,6 +815,16 @@
     
     let supabaseClient = null;
     let supabaseReady = false;
+    let supabaseAuthReady = false;
+    let authStatusMessage = 'Checking Supabase access…';
+
+    function updateSupabaseStatusNotice() {
+      const notice = document.getElementById('supabaseStatusNotice');
+      if (!notice) return;
+      notice.textContent = authStatusMessage;
+      notice.className = supabaseAuthReady ? 'empty' : 'empty';
+      notice.style.color = supabaseAuthReady ? '#2563eb' : '#b45309';
+    }
     
     // Try to init immediately
     supabaseClient = getSupabase();
@@ -834,6 +856,49 @@
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       return supabaseReady;
+    }
+
+    async function ensureSupabaseSession() {
+      if (!supabaseClient) {
+        authStatusMessage = 'Supabase client is unavailable. The page will use local data until it is reachable.';
+        updateSupabaseStatusNotice();
+        return false;
+      }
+      if (supabaseAuthReady) {
+        authStatusMessage = 'Supabase session ready.';
+        updateSupabaseStatusNotice();
+        return true;
+      }
+
+      if (!SUPABASE_AUTH_EMAIL || !SUPABASE_AUTH_PASSWORD || SUPABASE_AUTH_EMAIL.includes('example') || SUPABASE_AUTH_PASSWORD.includes('change-me')) {
+        authStatusMessage = 'Supabase auth is not configured yet. Create a real auth user and add the email/password values to the page config.';
+        updateSupabaseStatusNotice();
+        return false;
+      }
+
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({
+          email: SUPABASE_AUTH_EMAIL,
+          password: SUPABASE_AUTH_PASSWORD
+        });
+
+        if (error) {
+          console.warn('Supabase sign-in failed:', error);
+          authStatusMessage = `Supabase auth failed: ${error.message || 'unknown error'}. Create the auth user first, then add the matching email and password.`;
+          updateSupabaseStatusNotice();
+          return false;
+        }
+
+        supabaseAuthReady = !!data?.session;
+        authStatusMessage = supabaseAuthReady ? 'Supabase session ready.' : 'Supabase session is not active.';
+        updateSupabaseStatusNotice();
+        return supabaseAuthReady;
+      } catch (error) {
+        console.warn('Supabase auth setup failed:', error);
+        authStatusMessage = 'Supabase auth setup failed. Check the project URL, anon key, and auth user configuration.';
+        updateSupabaseStatusNotice();
+        return false;
+      }
     }
     const partForm = document.getElementById('partForm');
     const inventoryBody = document.getElementById('inventoryBody');
@@ -1268,8 +1333,8 @@
         }
         
         if (!supabaseClient) {
-          console.error("Supabase client not available after 5 seconds. Using starter parts.");
-          return getStarterParts();
+          console.warn('Supabase client not available; inventory will remain empty until the connection is available.');
+          return [];
         }
         
         const { data, error } = await supabaseClient
@@ -1279,7 +1344,7 @@
         
         if (error) {
           console.warn('Could not load inventory from Supabase:', error);
-          return getStarterParts();
+          return [];
         }
         
         if (data && data.length > 0) {
@@ -1288,34 +1353,12 @@
             minStock: part.minstock
           }));
         }
-        
-        // If table is empty, create starter data
-        return await createStarterParts();
+
+        return [];
       } catch (error) {
         console.warn('Error loading parts:', error);
-        return getStarterParts();
+        return [];
       }
-    }
-
-    function getStarterParts() {
-      return [
-        { id: crypto.randomUUID(), name: 'Bearing 6204', barcode: '6204-BRG', quantity: 8, minstock: 10, image: null },
-        { id: crypto.randomUUID(), name: 'Hydraulic Seal Kit', barcode: 'HSK-001', quantity: 3, minstock: 6, image: null },
-        { id: crypto.randomUUID(), name: 'Motor Relay 24V', barcode: 'MR-24V', quantity: 14, minstock: 8, image: null }
-      ];
-    }
-
-    async function createStarterParts() {
-      const starterParts = getStarterParts();
-      const { error } = await supabaseClient
-        .from('inventory_parts')
-        .insert(starterParts);
-      
-      if (error) {
-        console.warn('Could not create starter parts:', error);
-      }
-      
-      return starterParts;
     }
 
     async function addPart(formData) {
@@ -1866,6 +1909,11 @@
 
     async function saveDocToSupabase(record) {
       if (!supabaseClient) return null;
+      if (!supabaseAuthReady) {
+        authStatusMessage = 'Document save skipped because Supabase auth is not ready. The document will stay local until RLS/auth is fixed.';
+        updateSupabaseStatusNotice();
+        return null;
+      }
 
       try {
         const payload = {
@@ -1884,11 +1932,18 @@
 
         const { data, error } = await supabaseClient
           .from(docsTableName)
-          .insert(payload)
+          .insert([payload])
           .select()
           .single();
 
         if (error) {
+          console.error('Supabase document insert failed:', error);
+          if (error?.code === '42501' || /row-level security|permission denied/i.test(error?.message || '')) {
+            authStatusMessage = 'Document save was blocked by Supabase RLS. Add a policy that allows authenticated users to insert into inventory_documents.';
+          } else {
+            authStatusMessage = `Document save failed: ${error.message || 'unknown error'}`;
+          }
+          updateSupabaseStatusNotice();
           throw error;
         }
 
@@ -1950,6 +2005,11 @@
 
     async function uploadDocumentToSupabase(file, note, dataUrl) {
       if (!supabaseClient || !supabaseClient.storage) {
+        return null;
+      }
+      if (!supabaseAuthReady) {
+        authStatusMessage = 'File upload skipped because Supabase auth is not ready. The file will stay local until RLS/auth is fixed.';
+        updateSupabaseStatusNotice();
         return null;
       }
 
@@ -2236,6 +2296,9 @@
           };
           const savedRecord = supabaseClient ? await saveDocToSupabase(record) : null;
           uploadedDocs.unshift(savedRecord || record);
+          if (!savedRecord && supabaseClient) {
+            console.warn('Link was not saved to Supabase. Check the table RLS policies.');
+          }
         }
 
         saveUploadedDocs();
@@ -2397,6 +2460,8 @@
     // Initialize the app
     (async () => {
       await waitForSupabase();
+      await ensureSupabaseSession();
+      updateSupabaseStatusNotice();
       parts = await loadParts();
       signOutRecords = await loadSignOutRecords();
       uploadedDocs = loadUploadedDocs();
