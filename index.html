@@ -758,11 +758,15 @@
               <input type="file" id="docUploadInput" accept=".csv,.xls,.xlsx,.ods,.pdf,.doc,.docx,.txt,.json,.xml" multiple />
             </label>
             <label>
-              Note for these files
+              Or paste a link to a Google Doc, Google Sheet, or other shared document
+              <input type="url" id="docLinkInput" placeholder="https://docs.google.com/...." />
+            </label>
+            <label>
+              Note for these files or links
               <input type="text" id="docNotesInput" placeholder="Optional note such as warehouse location or report month" />
             </label>
             <div class="actions">
-              <button class="primary" type="submit">Upload files</button>
+              <button class="primary" type="submit">Save files or link</button>
             </div>
           </form>
         </section>
@@ -878,6 +882,7 @@
     const myTeamMeta = document.getElementById('myTeamMeta');
     const docUploadForm = document.getElementById('docUploadForm');
     const docUploadInput = document.getElementById('docUploadInput');
+    const docLinkInput = document.getElementById('docLinkInput');
     const docNotesInput = document.getElementById('docNotesInput');
     const docUploadList = document.getElementById('docUploadList');
 
@@ -1781,6 +1786,22 @@
       return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
     }
 
+    function getLinkDisplayName(link) {
+      if (!link) return 'Shared document link';
+      try {
+        const url = new URL(link);
+        const hostname = url.hostname.replace(/^www\./, '');
+        const pathname = url.pathname.replace(/\/+$/, '').split('/').filter(Boolean).pop();
+        if (pathname) {
+          const label = pathname.replace(/[-_]+/g, ' ').replace(/\.(doc|docx|pdf|xls|xlsx|csv|txt|json|xml)$/i, '').trim();
+          return label ? `${hostname}: ${label}` : hostname;
+        }
+        return hostname;
+      } catch (error) {
+        return link;
+      }
+    }
+
     function loadUploadedDocs() {
       try {
         const saved = localStorage.getItem(docsStorageKey);
@@ -1870,15 +1891,16 @@
       }
 
       docUploadList.innerHTML = sortedDocs.map(doc => {
-        const fileHref = doc.publicUrl || doc.dataUrl || '';
-        const storageLabel = doc.storagePath ? 'Stored in Supabase' : 'Stored locally';
+        const fileHref = doc.publicUrl || doc.dataUrl || doc.link || '';
+        const storageLabel = doc.storagePath ? 'Stored in Supabase' : doc.link ? 'External link' : 'Stored locally';
+        const sizeText = doc.size ? `• Size: ${escapeHtml(formatFileSize(doc.size || 0))}` : '';
         return `
           <div class="doc-upload-item">
             <div class="doc-upload-title">${escapeHtml(doc.name)}</div>
             <div class="doc-upload-meta">${escapeHtml(doc.note || 'No note added')}</div>
-            <div class="doc-upload-meta">Type: ${escapeHtml(doc.type || 'file')} • Size: ${escapeHtml(formatFileSize(doc.size || 0))} • ${escapeHtml(storageLabel)} • Uploaded: ${escapeHtml(new Date(doc.uploadedAt).toLocaleString())}</div>
+            <div class="doc-upload-meta">Type: ${escapeHtml(doc.type || (doc.link ? 'link' : 'file'))} ${sizeText ? sizeText : ''} • ${escapeHtml(storageLabel)} • Uploaded: ${escapeHtml(new Date(doc.uploadedAt).toLocaleString())}</div>
             <div class="doc-upload-actions">
-              ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(doc.name)}">Open / Download</a>` : ''}
+              ${fileHref ? `<a class="secondary" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(doc.name)}">Open / Open link</a>` : ''}
               <button class="danger" type="button" data-action="remove-doc" data-id="${doc.id}">Remove</button>
             </div>
           </div>
@@ -2057,6 +2079,7 @@
         }
 
         const note = docNotesInput?.value.trim() || '';
+        const linkValue = docLinkInput?.value.trim() || '';
 
         for (const file of files) {
           try {
@@ -2074,6 +2097,18 @@
           } catch (error) {
             console.warn('Could not read uploaded file:', error);
           }
+        }
+
+        if (linkValue) {
+          uploadedDocs.unshift({
+            id: crypto.randomUUID(),
+            name: getLinkDisplayName(linkValue),
+            type: 'link',
+            size: 0,
+            note,
+            uploadedAt: new Date().toISOString(),
+            link: linkValue
+          });
         }
 
         saveUploadedDocs();
