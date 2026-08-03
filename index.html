@@ -568,6 +568,7 @@
         <h1>VULTR Inventory Manager</h1>
       </div>
       <div class="version-banner" id="uiVersionBanner">UI v2026.08.03-docs</div>
+      <div class="version-banner" style="background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.35); color: #bbf7d0;">NEW UI ACTIVE</div>
     </header>
 
     <div class="tabs" role="tablist" aria-label="Main sections">
@@ -2367,9 +2368,10 @@
         const title = explicitDisplayName || String(normalizedDoc.name || getDocDisplayName(normalizedDoc) || 'Document').trim();
         const note = doc.note ? escapeHtml(doc.note) : '';
         const safeTitle = title && title !== 'Document' ? title : 'Document';
+        const marker = '<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:999px;background:rgba(96,165,250,0.18);color:#bfdbfe;font-size:11px;font-weight:700;">NEW</span>';
         return `
           <div class="doc-upload-item">
-            <div class="doc-upload-title">${escapeHtml(safeTitle)}</div>
+            <div class="doc-upload-title">${escapeHtml(safeTitle)}${marker}</div>
             ${note ? `<div class="doc-upload-meta">${note}</div>` : ''}
             <div class="doc-upload-actions">
               ${fileHref ? `<a class="link-action" href="${escapeHtml(fileHref)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(safeTitle)}">Open</a>` : ''}
